@@ -66,6 +66,8 @@ test('missing task store starts empty and malformed JSON fails safely', async ()
     assert.deepEqual(await empty.list(), []);
     await (await import('node:fs/promises')).writeFile(filePath, '{not-json', 'utf8');
     await assert.rejects(() => new CollectorTaskStore(filePath).list(), /JSON|Unexpected token/i);
+    await (await import('node:fs/promises')).writeFile(filePath, JSON.stringify({ version: 1, tasks: [{ id: 'bad', method: 'visible-notes', status: 'invented' }] }), 'utf8');
+    await assert.rejects(() => new CollectorTaskStore(filePath).list(), /status is invalid/i);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
