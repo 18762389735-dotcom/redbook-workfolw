@@ -5,6 +5,7 @@ const path = require('node:path');
 const { XhsSession } = require('./xhs-session.cjs');
 const { ElectronCollector } = require('./electron-collector.cjs');
 const { stopChildProcess } = require('./process-lifecycle.cjs');
+const { sendToWindow } = require('./window-ipc.cjs');
 
 let serverProcess;
 let serverUrl;
@@ -44,7 +45,7 @@ async function stopLocalServer() {
   return serverStopPromise;
 }
 
-function broadcastTask(task) { if (task && workbenchWindow && !workbenchWindow.isDestroyed()) workbenchWindow.webContents.send('desktop:collector-task-changed', task); }
+function broadcastTask(task) { if (task) sendToWindow(workbenchWindow, 'desktop:collector-task-changed', task); }
 function registerIpc() {
   ipcMain.on('desktop:xhs-bridge-source-sync', (event) => { event.returnValue = xhsSession?.ownsWebContents(event.sender) ? bridgeSource() : null; });
   ipcMain.handle('desktop:open-xhs', () => xhsSession.open());
@@ -80,7 +81,7 @@ async function createWorkbench() {
 async function main() {
   await app.whenReady();
   await startLocalServer();
-  xhsSession = new XhsSession({ preloadPath: path.join(__dirname, 'xhs-preload.cjs'), onStatusChanged: (status) => { if (workbenchWindow && !workbenchWindow.isDestroyed()) workbenchWindow.webContents.send('desktop:xhs-status-changed', status); } });
+  xhsSession = new XhsSession({ preloadPath: path.join(__dirname, 'xhs-preload.cjs'), onStatusChanged: (status) => sendToWindow(workbenchWindow, 'desktop:xhs-status-changed', status) });
   collector = new ElectronCollector({ xhsSession, serverUrl, runtimeRoot: runtimeRoot(), onTaskChanged: broadcastTask });
   registerIpc();
   if (process.argv.includes('--smoke-test')) {
