@@ -12,6 +12,6 @@
   → GET /api/signals → 发现页
 ```
 
-`data/signals.json` 是独立的运行时数据，不属于旧项目的 `.data/workspace.json`，也不进入 Git。没有页面轮询 Agent Job；采集和其余页面互不阻塞。任务失败不会保存数据。小博主候选筛选是透明的 UI 筛选：已知粉丝数不超过 10,000 且已知赞/藏/评之和至少 100；缺失字段不进入该筛选。
+`data/signals.json` 是独立的运行时数据，不属于旧项目的 `.data/workspace.json`，也不进入 Git。没有页面轮询 Agent Job；采集和其余页面互不阻塞。任务失败不会保存数据。`GET /api/signals` 同时返回 `latestTaskId` 与 `latestCapturedAt`，“最新采集”只展示该 taskId 最后触达的记录；duplicate 也会保存最新 provenance。小博主候选筛选是透明的 UI 筛选：已知粉丝数不超过 10,000 且已知赞/藏/评之和至少 100；缺失字段不进入该筛选。
 
 后续 Batch 才可实现 Signals 之上的 Discovery、Matching、Decision、Opportunities、知识编辑与写作持久化。

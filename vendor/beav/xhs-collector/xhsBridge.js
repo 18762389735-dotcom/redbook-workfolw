@@ -1,5 +1,5 @@
 /*
- * Source: Beav-main/Plugin/src/xhsBridge.js (https://github.com/Beav-Project/Beav)
+ * Source: Plugin/src/xhsBridge.js (https://github.com/Jamailar/Beav)
  * License: MIT License – Non-Commercial Use Only; see docs/BEAV_ATTRIBUTION.md.
  * Modification: copied unchanged except for this attribution header; consumed by this
  * project's minimal local collector, not the Beav desktop application.

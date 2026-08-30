@@ -27,6 +27,6 @@ export function createSignal(input, now = new Date().toISOString()) {
 }
 
 export function comparableSignal(signal) {
-  const { capturedAt, id, ...content } = signal;
-  return JSON.stringify(content);
+  const { capturedAt, id, source, ...platformFacts } = signal;
+  return JSON.stringify(platformFacts);
 }
