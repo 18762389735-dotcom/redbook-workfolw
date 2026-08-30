@@ -59,13 +59,20 @@ export async function startServer({ host, port, production = process.argv.includ
   const requestedPort = port ?? (process.env.PORT ? Number(process.env.PORT) : production ? 0 : 5173);
   if (!Number.isInteger(requestedPort) || requestedPort < 0 || requestedPort > 65535) throw new TypeError('PORT 必须是 0–65535 的整数');
   const { api } = createApi(resolvedRuntimeRoot);
-  const corsPolicy = createCorsPolicy({ production, allowedOrigins });
+  // Production policy is bound after listen so the exact ephemeral port is
+  // part of both the same-origin and Host checks.
+  let corsPolicy;
   let vite;
   const server = createServer(async (request, response) => {
     // This is a short-lived loopback API/renderer server owned by the desktop
     // process. Closing each response avoids Windows keep-alive handles
     // delaying orderly shutdown and never affects the XHS session itself.
     response.setHeader('connection', 'close');
+    if (!corsPolicy) {
+      response.writeHead(503, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: '服务器尚未就绪' }));
+      return;
+    }
     if (enforceCors(request, response, corsPolicy)) return;
     if (production) return serveProduction(request, response, api);
     if (request.url.startsWith('/api/')) return api(request, response);
@@ -80,6 +87,7 @@ export async function startServer({ host, port, production = process.argv.includ
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   const url = `http://${resolvedHost}:${actualPort}`;
+  corsPolicy = createCorsPolicy({ production, allowedOrigins, sameOrigin: url, allowedHost: `${resolvedHost}:${actualPort}` });
   console.log(`REDBOOK_READY ${url}`);
   return { server, url, host: resolvedHost, port: actualPort, runtimeRoot: resolvedRuntimeRoot };
 }

@@ -1,35 +1,53 @@
 function configuredOrigins(value = process.env.REDBOOK_ALLOWED_ORIGINS || '') {
-  return new Set(String(value).split(',').map((origin) => origin.trim()).filter(Boolean));
+  const values = Array.isArray(value) ? value : String(value).split(',');
+  return new Set(values.map((origin) => String(origin).trim()).filter(Boolean));
 }
 
-export function createCorsPolicy({ production = false, allowedOrigins } = {}) {
+function normalizeHost(host) {
+  return typeof host === 'string' ? host.trim().toLowerCase() : '';
+}
+
+export function createCorsPolicy({ production = false, allowedOrigins, sameOrigin, allowedHost } = {}) {
   const exactOrigins = configuredOrigins(allowedOrigins);
+  const expectedOrigin = typeof sameOrigin === 'string' ? sameOrigin.trim() : '';
+  const expectedHost = normalizeHost(allowedHost);
   const allowExtensionScheme = !production && process.env.REDBOOK_DEV_ALLOW_EXTENSION_CORS === '1';
   const isAllowedOrigin = (origin) => {
     if (!origin) return false;
-    if (exactOrigins.has(origin)) return true;
-    return allowExtensionScheme && /^chrome-extension:\/\/[a-z0-9-]+$/i.test(origin);
+    const normalized = String(origin).trim();
+    if (production) return Boolean(expectedOrigin) && normalized === expectedOrigin;
+    if (exactOrigins.has(normalized)) return true;
+    return allowExtensionScheme && /^chrome-extension:\/\/[a-z0-9-]+$/i.test(normalized);
+  };
+  const isAllowedHost = (host) => !production || (Boolean(expectedHost) && normalizeHost(host) === expectedHost);
+  const isAllowedRequest = (request) => {
+    if (!isAllowedHost(request.headers.host)) return false;
+    const origin = request.headers.origin;
+    return !origin || isAllowedOrigin(origin);
   };
   return {
     isAllowedOrigin,
+    isAllowedHost,
+    isAllowedRequest,
     headers(request) {
       const origin = request.headers.origin;
-      if (!isAllowedOrigin(origin)) return {};
-      return { 'access-control-allow-origin': origin, vary: 'Origin' };
+      if (!origin || !isAllowedOrigin(origin)) return {};
+      return { 'access-control-allow-origin': String(origin).trim(), vary: 'Origin' };
     },
   };
 }
 
 /**
  * Remove legacy wildcard headers emitted by individual API handlers and apply
- * one origin policy at the HTTP boundary. An unapproved preflight is rejected
- * before the handler can return a permissive response.
+ * one origin policy at the HTTP boundary. Every request with an Origin is
+ * rejected before the handler unless that exact Origin is approved. This is
+ * intentionally enforced for simple requests too; hiding ACAO is not an
+ * authorization boundary.
  */
 export function enforceCors(request, response, policy) {
-  const origin = request.headers.origin;
-  if (request.method === 'OPTIONS' && origin && !policy.isAllowedOrigin(origin)) {
+  if (!policy.isAllowedRequest(request)) {
     response.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
-    response.end(JSON.stringify({ error: 'Origin 不被允许' }));
+    response.end(JSON.stringify({ error: '请求来源或 Host 不被允许' }));
     return true;
   }
   const writeHead = response.writeHead.bind(response);
