@@ -1,0 +1,14 @@
+.account-workspace { display: grid; gap: 20px; }
+.account-form-section { padding: 24px; border: 1px solid #e6e6eb; border-radius: 20px; background: #fff; box-shadow: 0 7px 22px rgba(28,31,39,.025); }
+.account-form-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.account-form-heading h2 { margin: 0; font-size: 19px; }
+.account-form-heading p { margin: 6px 0 0; color: #7e838d; font-size: 14px; }
+.account-form-heading > span { padding: 6px 10px; border-radius: 99px; background: #effbf4; color: #2d9a63; font-size: 12px; font-weight: 700; }
+.account-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 17px; }
+.account-form-grid label { display: grid; gap: 8px; color: #555b65; font-size: 13px; font-weight: 700; }
+.account-form-grid input,.account-form-grid textarea { width: 100%; padding: 12px 13px; border: 1px solid #dedfe5; border-radius: 10px; color: #292e37; line-height: 1.55; }
+.account-form-grid textarea { min-height: 104px; resize: vertical; }
+.account-form-grid .account-form-wide { grid-column: 1/-1; }
+.account-save-bar { position: sticky; bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 18px; border: 1px solid #e6e6eb; border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 10px 30px rgba(28,31,39,.1); }
+.account-save-bar small { color: #7e838d; }
+.account-save-bar .button { min-height: 46px; }

@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=20" },
-  "scripts": { "dev": "node server/index.mjs", "build": "vite build --config apps/web/vite.config.mjs", "start": "node server/index.mjs --production", "test": "node --test test/signal-store.test.mjs test/signals-api.test.mjs test/creator-store.test.mjs test/discovery.test.mjs test/discovery-api.test.mjs test/provenance.test.mjs" },
+  "scripts": { "dev": "node server/index.mjs", "build": "vite build --config apps/web/vite.config.mjs", "start": "node server/index.mjs --production", "test": "node --test test/*.test.mjs" },
   "dependencies": { "@vitejs/plugin-react": "5.0.4", "react": "19.2.0", "react-dom": "19.2.0", "vite": "6.4.2" }
 }

@@ -2,5 +2,7 @@ node_modules/
 dist/
 data/signals.json
 data/creators.json
+data/account.json
+data/opportunities.json
 data/*.tmp
 .DS_Store

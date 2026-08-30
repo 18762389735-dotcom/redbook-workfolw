@@ -11,13 +11,17 @@ XHS 公开页面（正常登录会话）
                                   ↓
                  GET /api/discovery（即时纯函数构建）
                                   ↓
-                       发现页证据查看器
+                   Platform Discovery（冻结证据）
+                                  ↓
+     account.json → Account Matching → Decision → Opportunity View
+                                                     ↑
+                                      opportunities.json（用户状态）
 ```
 
 ## 持久化边界
 
-- `SignalStore(filePath)` 与 `CreatorStore(filePath)` 都由调用方注入完整路径，Core 不认识仓库目录、React 或浏览器生命周期。
-- 开发环境默认使用 `data/signals.json` 与 `data/creators.json`，均不进入 Git。
+- `SignalStore(filePath)`、`CreatorStore(filePath)`、`AccountStore(filePath)` 与 `OpportunityStateStore(filePath)` 都由调用方注入完整路径，Core 不认识仓库目录、React 或浏览器生命周期。
+- 开发环境默认使用 `data/signals.json`、`data/creators.json`、`data/account.json` 与 `data/opportunities.json`，均不进入 Git。
 - `server/index.mjs` 支持 `REDBOOK_RUNTIME_ROOT`。未来 Electron main process 应传入 `app.getPath('userData')`，使安装、升级与源码目录完全解耦。
 - Signal 与 Creator 使用独立文件；禁止回到单体 `workspace.json`。
 - Signal Store 当前格式为 version 2。加载 version 1 时，会从旧 `source + capturedAt` 透明生成第一条 observation 并原子写回；不要求删除或重采数据。
@@ -38,7 +42,18 @@ XHS 公开页面（正常登录会话）
 
 `core/discovery` 只接收 Signals、Creator Snapshots 和可注入的 `now`。只有具有 `visible-notes` 或 `current-note` observation 的 Signal 才是 Discovery target。只有 `creator-baseline` observation 的笔记仍可作为同作者 Outlier baseline evidence，但不会成为 target、标题簇样本、关键词簇样本或独立作者样本。
 
-同一 Signal 可以同时具有自然发现与 baseline 两种 observation：它仍是 Discovery target，也能作为另一个 target 的 baseline。所有角色判断集中在 `core/signals/provenance.mjs`，不依赖最新 `source.method`。Discovery 不知道账号定位、个人偏好、知识库、材料或项目，所以相同平台数据必然产生相同平台结果。输出不是 Opportunity；Matching、Decision、LLM 和 Writing 均不在本批次。
+同一 Signal 可以同时具有自然发现与 baseline 两种 observation：它仍是 Discovery target，也能作为另一个 target 的 baseline。所有角色判断集中在 `core/signals/provenance.mjs`，不依赖最新 `source.method`。Discovery 不知道账号定位、个人偏好、知识库、材料或项目，所以相同平台数据必然产生相同平台结果。
+
+## 派生业务边界
+
+`Platform Discovery ≠ Account Matching ≠ Decision ≠ Opportunity UI`。
+
+- Discovery 只产生不可由账号反向修改的平台证据。
+- Matching 只把 Cluster 支持样本与用户确认的 `AccountProfile` 做确定性匹配。
+- Decision 将每条 Match 映射为行动建议，不读取 React 状态。
+- Opportunity 只组合 Decision、证据 trace 与按 `clusterId` 保存的用户状态，不重新评分。
+
+账号修改会在下一次同步 GET 时即时重算 Matching、Decision 与 Opportunity View；Discovery 不变，saved/dismissed/selected 状态继续保留。WATCH/HOLD 被人工选择时，原 Decision status 与 `manualOverride = true` 一并保存，供未来 Writing 识别。当前 Batch 不实现 Writing backend、LLM、Knowledge 或 Electron。
 
 ## 桌面目标
 
