@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Redbook Workflow Collector (Beav-derived)",
+  "version": "0.1.0",
+  "description": "手动采集当前小红书页面已加载的公开内容到本地工作台。",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://www.xiaohongshu.com/*", "https://www.rednote.com/*", "http://localhost:5173/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "采集到本地工作台", "default_popup": "popup.html" },
+  "content_scripts": [{ "matches": ["https://www.xiaohongshu.com/*", "https://www.rednote.com/*"], "js": ["xhsBridge.js"], "run_at": "document_start", "world": "MAIN" }]
+}

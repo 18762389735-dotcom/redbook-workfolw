@@ -1,0 +1,2 @@
+import { UiIcon } from "./UiIcon";
+export function DataCard({ icon, title, value, description, tone = "red", action, onClick }) { return <article className={`data-card data-card--${tone}`}><div className="data-card-icon"><UiIcon name={icon} size={24} /></div><h2>{title}</h2><p className="data-card-value">{value}</p><p className="data-card-description">{description}</p>{action && <button className="card-action" onClick={onClick}>{action}<UiIcon name="arrow" size={16} /></button>}</article>; }

@@ -1,0 +1,20 @@
+.topic-boundaries {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #f0dfc7;
+  border-radius: 10px;
+  background: #fffaf5;
+}
+
+.topic-boundaries p {
+  margin: 0;
+  color: #8a6b4b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.topic-boundaries strong {
+  color: #715638;
+}
