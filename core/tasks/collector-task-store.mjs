@@ -4,12 +4,15 @@ import { dirname } from 'node:path';
 
 const STORE_VERSION = 1;
 const ACTIVE_STATUSES = new Set(['queued', 'running']);
+const VALID_STATUSES = new Set(['queued', 'running', 'completed', 'partial', 'failed', 'cancelled']);
 const now = () => new Date().toISOString();
 
 function normalizeTask(task) {
+  const status = task.status || 'queued';
+  if (!VALID_STATUSES.has(status)) throw new TypeError('collector task status is invalid');
   return {
     ...task,
-    id: String(task.id), method: String(task.method || 'visible-notes'), status: task.status || 'queued',
+    id: String(task.id), method: String(task.method || 'visible-notes'), status,
     createdAt: task.createdAt || now(), startedAt: task.startedAt || null, updatedAt: task.updatedAt || task.createdAt || now(), completedAt: task.completedAt || null,
     progress: { current: Number(task.progress?.current) || 0, total: Number(task.progress?.total) || 0 },
     result: { received: Number(task.result?.received) || 0, created: Number(task.result?.created) || 0, updated: Number(task.result?.updated) || 0, duplicates: Number(task.result?.duplicates) || 0 },
@@ -71,7 +74,10 @@ export class CollectorTaskStore {
     await this.load();
     const existing = this.tasks.get(id);
     if (!existing) return null;
-    const next = normalizeTask({ ...existing, ...patch, progress: { ...existing.progress, ...(patch.progress || {}) }, result: { ...existing.result, ...(patch.result || {}) }, updatedAt: now() });
+    const status = existing.status === 'cancelled' && patch.status && patch.status !== 'cancelled'
+      ? existing.status
+      : patch.status || existing.status;
+    const next = normalizeTask({ ...existing, ...patch, status, progress: { ...existing.progress, ...(patch.progress || {}) }, result: { ...existing.result, ...(patch.result || {}) }, updatedAt: now() });
     this.tasks.set(id, next);
     await this.persist();
     return structuredClone(next);

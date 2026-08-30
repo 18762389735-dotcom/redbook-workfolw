@@ -24,3 +24,49 @@ test('CollectorTaskStore writes, reloads, and cancels an active task', async () 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('cancel wins a completion race and terminal tasks cannot be cancelled again', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'redbook-task-race-'));
+  const filePath = join(root, 'collector-tasks.json');
+  try {
+    const store = new CollectorTaskStore(filePath);
+    const created = await store.create('creator-baseline', 2);
+    await store.update(created.id, { status: 'running' });
+    assert.equal((await store.cancel(created.id)).status, 'cancelled');
+    assert.equal((await store.update(created.id, { status: 'completed', completedAt: new Date().toISOString() })).status, 'cancelled');
+    assert.equal(await store.cancel(created.id), null);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('completed and failed task terminal state and error survive reload', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'redbook-task-terminal-'));
+  const filePath = join(root, 'collector-tasks.json');
+  try {
+    const store = new CollectorTaskStore(filePath);
+    const completed = await store.create('visible-notes', 1);
+    await store.update(completed.id, { status: 'completed', completedAt: new Date().toISOString() });
+    const failed = await store.create('creator-profile', 1);
+    await store.update(failed.id, { status: 'failed', error: '公开页面不可用', completedAt: new Date().toISOString() });
+    const reloaded = new CollectorTaskStore(filePath);
+    assert.equal((await reloaded.cancel(completed.id)), null);
+    assert.equal((await reloaded.get(completed.id)).status, 'completed');
+    assert.equal((await reloaded.get(failed.id)).error, '公开页面不可用');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('missing task store starts empty and malformed JSON fails safely', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'redbook-task-malformed-'));
+  const filePath = join(root, 'collector-tasks.json');
+  try {
+    const empty = new CollectorTaskStore(filePath);
+    assert.deepEqual(await empty.list(), []);
+    await (await import('node:fs/promises')).writeFile(filePath, '{not-json', 'utf8');
+    await assert.rejects(() => new CollectorTaskStore(filePath).list(), /JSON|Unexpected token/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
