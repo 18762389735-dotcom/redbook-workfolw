@@ -4,12 +4,15 @@ const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs'
 const path = require('node:path');
 const { XhsSession } = require('./xhs-session.cjs');
 const { ElectronCollector } = require('./electron-collector.cjs');
+const { stopChildProcess } = require('./process-lifecycle.cjs');
 
 let serverProcess;
 let serverUrl;
 let workbenchWindow;
 let xhsSession;
 let collector;
+let serverStopPromise = null;
+let appShutdownInProgress = false;
 
 function projectRoot() { return app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..'); }
 function runtimeRoot() { return path.resolve(process.env.REDBOOK_DESKTOP_RUNTIME_DIR || app.getPath('userData')); }
@@ -32,7 +35,14 @@ async function startLocalServer() {
   serverProcess = spawn(process.execPath, [serverEntry(), '--production'], { cwd: workingDirectory, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   serverUrl = await waitForServer(serverProcess); return serverUrl;
 }
-async function stopLocalServer() { if (!serverProcess || serverProcess.killed) return; const child = serverProcess; serverProcess = null; child.kill(); await new Promise((resolve) => child.once('exit', resolve)); }
+async function stopLocalServer() {
+  if (serverStopPromise) return serverStopPromise;
+  const child = serverProcess;
+  serverProcess = null;
+  if (!child) return;
+  serverStopPromise = stopChildProcess(child).finally(() => { serverStopPromise = null; });
+  return serverStopPromise;
+}
 
 function broadcastTask(task) { if (task && workbenchWindow && !workbenchWindow.isDestroyed()) workbenchWindow.webContents.send('desktop:collector-task-changed', task); }
 function registerIpc() {
@@ -86,5 +96,10 @@ app.on('window-all-closed', async () => {
   if (process.argv.includes('--smoke-test')) return;
   await xhsSession?.close(); await stopLocalServer(); app.quit();
 });
-app.on('before-quit', () => { if (serverProcess && !serverProcess.killed) serverProcess.kill(); });
+app.on('before-quit', (event) => {
+  if (appShutdownInProgress || (!serverProcess && !xhsSession?.getWindow?.())) return;
+  event.preventDefault();
+  appShutdownInProgress = true;
+  Promise.all([xhsSession?.close?.(), stopLocalServer()]).catch(() => {}).finally(() => app.quit());
+});
 main().catch(async (error) => { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopLocalServer(); app.exit(1); });
