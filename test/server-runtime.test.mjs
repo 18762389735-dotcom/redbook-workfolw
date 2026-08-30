@@ -6,12 +6,19 @@ import { afterEach, test } from 'node:test';
 import { startServer } from '../server/index.mjs';
 
 const cleanups = [];
+const closeServer = (server) => new Promise((resolve, reject) => {
+  // Node's Windows HTTP agent may retain an idle keep-alive socket after a
+  // static stream has completed; explicitly close idle connections before
+  // waiting for the server's close callback.
+  server.closeAllConnections?.();
+  server.close((error) => error ? reject(error) : resolve());
+});
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())));
 
 test('production Server uses loopback and an OS-assigned port', async () => {
   const runtimeRoot = await mkdtemp(join(tmpdir(), 'redbook-server-'));
   const running = await startServer({ production: true, host: '0.0.0.0', port: 0, runtimeRoot });
-  cleanups.push(async () => { await new Promise((resolve) => running.server.close(resolve)); await rm(runtimeRoot, { recursive: true, force: true }); });
+  cleanups.push(async () => { await closeServer(running.server); await rm(runtimeRoot, { recursive: true, force: true }); });
   assert.equal(running.host, '127.0.0.1'); assert.ok(running.port > 0); assert.match(running.url, /^http:\/\/127\.0\.0\.1:\d+$/); assert.equal(running.server.address().address, '127.0.0.1');
   for (const endpoint of ['/api/account', '/api/discovery', '/api/opportunities']) assert.equal((await fetch(`${running.url}${endpoint}`)).status, 200);
   const account = await (await fetch(`${running.url}/api/account`)).json(); assert.equal(account.displayName, '');
@@ -21,7 +28,7 @@ test('production Server uses loopback and an OS-assigned port', async () => {
 
 test('production Server serves the built renderer', async () => {
   const runtimeRoot = await mkdtemp(join(tmpdir(), 'redbook-static-')); const running = await startServer({ production: true, port: 0, runtimeRoot });
-  cleanups.push(async () => { await new Promise((resolve) => running.server.close(resolve)); await rm(runtimeRoot, { recursive: true, force: true }); });
+  cleanups.push(async () => { await closeServer(running.server); await rm(runtimeRoot, { recursive: true, force: true }); });
   const response = await fetch(`${running.url}/`); assert.equal(response.status, 200); assert.match(await response.text(), /小红书 AI 内容运营工作台|root/);
 });
 
