@@ -11,7 +11,14 @@ const files = (await readdir(resolve(root, 'test')))
 
 // Keep the suite deterministic on the Windows runner: several tests start
 // short-lived loopback servers and parallel test files can retain sockets
-// longer on Windows than on POSIX.
-const child = spawn(process.execPath, ['--test', '--test-concurrency=1', ...files], { cwd: root, stdio: 'inherit', windowsHide: true });
-child.once('error', (error) => { console.error(error); process.exitCode = 1; });
-child.once('exit', (code, signal) => { process.exitCode = code ?? (signal ? 1 : 0); });
+// longer on Windows than on POSIX. A per-file watchdog also prevents a native
+// handle from leaving CI indefinitely without identifying the offending file.
+for (const file of files) {
+  const code = await new Promise((resolvePromise) => {
+    const child = spawn(process.execPath, ['--test', '--test-concurrency=1', file], { cwd: root, stdio: 'inherit', windowsHide: true });
+    const timer = setTimeout(() => { console.error(`Test timeout: ${file}`); child.kill(); resolvePromise(1); }, 60_000);
+    child.once('error', (error) => { clearTimeout(timer); console.error(error); resolvePromise(1); });
+    child.once('exit', (exitCode, signal) => { clearTimeout(timer); resolvePromise(exitCode ?? (signal ? 1 : 0)); });
+  });
+  if (code !== 0) { process.exitCode = code; break; }
+}
