@@ -62,6 +62,10 @@ export async function startServer({ host, port, production = process.argv.includ
   const corsPolicy = createCorsPolicy({ production, allowedOrigins });
   let vite;
   const server = createServer(async (request, response) => {
+    // This is a short-lived loopback API/renderer server owned by the desktop
+    // process. Closing each response avoids Windows keep-alive handles
+    // delaying orderly shutdown and never affects the XHS session itself.
+    response.setHeader('connection', 'close');
     if (enforceCors(request, response, corsPolicy)) return;
     if (production) return serveProduction(request, response, api);
     if (request.url.startsWith('/api/')) return api(request, response);
