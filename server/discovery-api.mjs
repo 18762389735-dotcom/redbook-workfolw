@@ -7,7 +7,7 @@ export function createDiscoveryApiHandler(signalStore, creatorStore) {
       return response.end(JSON.stringify({ error: '接口不存在' }));
     }
     const result = buildDiscovery({ signals: await signalStore.list(), creators: await creatorStore.list(), now: new Date() });
-    response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*' });
+    response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     response.end(JSON.stringify(result));
   };
 }

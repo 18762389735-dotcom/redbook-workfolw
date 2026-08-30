@@ -34,6 +34,33 @@ jobs:
       - name: Packaged application smoke
         run: npm run desktop:packaged-smoke
 
+      - name: Desktop collector structural smoke
+        shell: pwsh
+        run: |
+          npm run desktop:collector-smoke *> collector-desktop-smoke-evidence.txt
+          $smokeExit = $LASTEXITCODE
+          Get-Content collector-desktop-smoke-evidence.txt
+          if ($smokeExit -ne 0) { exit $smokeExit }
+
+      - name: Desktop lifecycle smoke
+        shell: pwsh
+        run: |
+          npm run desktop:lifecycle-smoke *> lifecycle-smoke-evidence.txt
+          $smokeExit = $LASTEXITCODE
+          Get-Content lifecycle-smoke-evidence.txt
+          if ($smokeExit -ne 0) { exit $smokeExit }
+
+      - name: Verify packaged third-party notices
+        shell: pwsh
+        run: |
+          $resources = Join-Path (Resolve-Path release/win-unpacked) 'resources'
+          $beavLicense = Join-Path $resources 'vendor/beav/LICENSE'
+          $notices = Join-Path $resources 'THIRD_PARTY_NOTICES.md'
+          if (-not (Test-Path -LiteralPath $beavLicense)) { throw "Packaged Beav LICENSE missing: $beavLicense" }
+          if (-not (Test-Path -LiteralPath $notices)) { throw "Packaged THIRD_PARTY_NOTICES missing: $notices" }
+          Write-Output "PACKAGED_LICENSE_OK $beavLicense"
+          Write-Output "PACKAGED_NOTICES_OK $notices"
+
       - name: Collector Option A compatibility spike (informational)
         shell: pwsh
         continue-on-error: true
@@ -68,3 +95,5 @@ jobs:
             release/SHA256SUMS.txt
             installer-smoke-evidence.txt
             collector-spike-evidence.txt
+            collector-desktop-smoke-evidence.txt
+            lifecycle-smoke-evidence.txt

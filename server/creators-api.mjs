@@ -1,7 +1,7 @@
 import { ingestCreators } from '../core/creators/ingest-creators.mjs';
 
 const json = (response, status, value) => {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*' });
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(value));
 };
 
@@ -19,7 +19,7 @@ export function createCreatorsApiHandler(store) {
     const url = new URL(request.url, 'http://localhost');
     try {
       if (request.method === 'OPTIONS') {
-        response.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type' });
+        response.writeHead(204, { 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type' });
         return response.end();
       }
       if (request.method === 'GET' && url.pathname === '/api/creators') return json(response, 200, { creators: await store.list() });

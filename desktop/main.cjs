@@ -1,13 +1,20 @@
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { spawn } = require('node:child_process');
-const { existsSync, mkdirSync, writeFileSync } = require('node:fs');
+const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
 const path = require('node:path');
+const { XhsSession } = require('./xhs-session.cjs');
+const { ElectronCollector } = require('./electron-collector.cjs');
 
 let serverProcess;
 let serverUrl;
+let workbenchWindow;
+let xhsSession;
+let collector;
+
 function projectRoot() { return app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..'); }
 function runtimeRoot() { return path.resolve(process.env.REDBOOK_DESKTOP_RUNTIME_DIR || app.getPath('userData')); }
 function serverEntry() { const entry = path.join(projectRoot(), 'server', 'index.mjs'); if (!existsSync(entry)) throw new Error(`Server entry not found: ${entry}`); return entry; }
+function bridgeSource() { const source = path.join(projectRoot(), 'vendor', 'beav', 'xhs-collector', 'xhsBridge.js'); if (!existsSync(source)) throw new Error(`xhsBridge source not found: ${source}`); return readFileSync(source, 'utf8'); }
 function isLocalAppUrl(url) { try { return serverUrl && new URL(url).origin === new URL(serverUrl).origin; } catch { return false; } }
 function waitForServer(child, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -26,6 +33,19 @@ async function startLocalServer() {
   serverUrl = await waitForServer(serverProcess); return serverUrl;
 }
 async function stopLocalServer() { if (!serverProcess || serverProcess.killed) return; const child = serverProcess; serverProcess = null; child.kill(); await new Promise((resolve) => child.once('exit', resolve)); }
+
+function broadcastTask(task) { if (task && workbenchWindow && !workbenchWindow.isDestroyed()) workbenchWindow.webContents.send('desktop:collector-task-changed', task); }
+function registerIpc() {
+  ipcMain.on('desktop:xhs-bridge-source-sync', (event) => { event.returnValue = xhsSession?.ownsWebContents(event.sender) ? bridgeSource() : null; });
+  ipcMain.handle('desktop:open-xhs', () => xhsSession.open());
+  ipcMain.handle('desktop:xhs-status', () => xhsSession.status());
+  ipcMain.handle('desktop:collect-visible', () => collector.collectVisible());
+  ipcMain.handle('desktop:collect-creator', () => collector.collectCreator());
+  ipcMain.handle('desktop:collect-creator-baseline', (_event, limit) => collector.collectCreatorBaseline(limit));
+  ipcMain.handle('desktop:cancel-collector-task', (_event, taskId) => collector.cancel(taskId));
+  ipcMain.handle('desktop:list-collector-tasks', () => collector.listTasks());
+}
+
 async function checkSmoke() {
   const root = runtimeRoot(); const sourceRoot = projectRoot();
   if (root === sourceRoot || root.startsWith(`${sourceRoot}${path.sep}`) || root.startsWith(`${process.resourcesPath}${path.sep}`)) throw new Error(`runtime root is inside app resources: ${root}`);
@@ -33,17 +53,38 @@ async function checkSmoke() {
   if (responses.some((response) => !response.ok)) throw new Error(`API smoke failed: ${responses.map((response) => response.status).join(',')}`);
   if (process.env.REDBOOK_SMOKE_WRITE_ACCOUNT === '1') { const response = await fetch(`${serverUrl}/api/account`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'Desktop Smoke Account', positioning: 'temporary smoke test' }) }); if (!response.ok) throw new Error('smoke account write failed'); }
   if (process.env.REDBOOK_SMOKE_EXPECT_ACCOUNT === '1') { const account = await (await fetch(`${serverUrl}/api/account`)).json(); if (account.displayName !== 'Desktop Smoke Account') throw new Error('smoke account was not persisted'); }
+  if (process.argv.includes('--collector-smoke')) { const evidence = await collector.structuralSmoke(); console.log(`REDBOOK_DESKTOP_COLLECTOR_SMOKE_OK ${JSON.stringify(evidence)}`); }
+  if (process.argv.includes('--lifecycle-smoke')) { const evidence = await xhsSession.lifecycleSmoke(); console.log(`REDBOOK_XHS_LIFECYCLE_SMOKE_OK ${JSON.stringify(evidence)}`); }
   const marker = `REDBOOK_DESKTOP_SMOKE_OK ${serverUrl}`;
   console.log(marker);
   if (process.env.REDBOOK_DESKTOP_RUNTIME_DIR) { mkdirSync(root, { recursive: true }); writeFileSync(path.join(root, 'desktop-smoke-result.txt'), marker, 'utf8'); }
 }
+
 async function createWorkbench() {
-  const window = new BrowserWindow({ width: 1440, height: 960, minWidth: 1120, minHeight: 720, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
-  window.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
-  window.webContents.on('will-navigate', (event, url) => { if (!isLocalAppUrl(url)) { event.preventDefault(); if (/^https?:\/\//i.test(url)) shell.openExternal(url); } });
-  await window.loadURL(serverUrl);
+  workbenchWindow = new BrowserWindow({ width: 1440, height: 960, minWidth: 1120, minHeight: 720, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
+  workbenchWindow.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+  workbenchWindow.webContents.on('will-navigate', (event, url) => { if (!isLocalAppUrl(url)) { event.preventDefault(); if (/^https?:\/\//i.test(url)) shell.openExternal(url); } });
+  await workbenchWindow.loadURL(serverUrl);
 }
-async function main() { await app.whenReady(); await startLocalServer(); if (process.argv.includes('--smoke-test')) { try { await checkSmoke(); await stopLocalServer(); app.exit(0); } catch (error) { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopLocalServer(); app.exit(1); } return; } await createWorkbench(); }
-app.on('window-all-closed', async () => { await stopLocalServer(); app.quit(); });
+
+async function main() {
+  await app.whenReady();
+  await startLocalServer();
+  xhsSession = new XhsSession({ preloadPath: path.join(__dirname, 'xhs-preload.cjs'), onStatusChanged: (status) => { if (workbenchWindow && !workbenchWindow.isDestroyed()) workbenchWindow.webContents.send('desktop:xhs-status-changed', status); } });
+  collector = new ElectronCollector({ xhsSession, serverUrl, runtimeRoot: runtimeRoot(), onTaskChanged: broadcastTask });
+  registerIpc();
+  if (process.argv.includes('--smoke-test')) {
+    try { await checkSmoke(); await stopLocalServer(); app.exit(0); } catch (error) { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopLocalServer(); app.exit(1); }
+    return;
+  }
+  await createWorkbench();
+}
+
+app.on('window-all-closed', async () => {
+  // Smoke probes create hidden XHS windows without a workbench window; do not
+  // quit while the probe is still persisting its task evidence.
+  if (process.argv.includes('--smoke-test')) return;
+  await xhsSession?.close(); await stopLocalServer(); app.quit();
+});
 app.on('before-quit', () => { if (serverProcess && !serverProcess.killed) serverProcess.kill(); });
 main().catch(async (error) => { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopLocalServer(); app.exit(1); });

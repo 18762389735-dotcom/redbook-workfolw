@@ -36,15 +36,19 @@ Core 不得硬编码仓库或安装目录。安装包资源与用户数据必须
 
 Batch 04 已在 Electron 44.0.0 上运行了 `npm run desktop:collector-spike`。扩展目录可以被 `session.extensions.loadExtension()` 接受，Manifest V3、`xhsBridge.js`、MAIN world 声明及 `chrome.scripting` / `chrome.storage` / `chrome.tabs` 用法均可被静态检查；但 Electron 控制台报告 `ManifestError: Service worker registration failed (Status code: 2)`，且 `serviceWorkers.getAllRunning()` 没有可运行的 worker。因此 Option A 当前只能视为“资源可加载”，不能视为 Collector 可用，已冻结为阻塞项。完整证据见 [`ELECTRON_COLLECTOR_SPIKE.md`](ELECTRON_COLLECTOR_SPIKE.md)。本轮不改写扩展，也不自动切换实现路线。
 
-### Option B（仅在 A 不足时）— 专用 XHS BrowserWindow
+### Option B（当前正式路线）— 专用 XHS BrowserWindow
 
-使用 persistent partition 的 Electron BrowserWindow，并在 page world 注入现有 `xhsBridge` 与最小采集适配。只有确认 Option A 所需 Chrome APIs 不足后才评估；当前不得为此重写 Collector。
+Electron 44 的兼容性 spike 已确认 Option A 的 MV3 service worker 无法运行，因此 Option A 已冻结为失败实验，不再修改扩展 manifest 或降低 Electron 安全配置。Batch 04.1 的正式路线是专用 persistent BrowserWindow：`persist:redbook-xhs` 分区、正常小红书登录、`xhs-preload.cjs` 注入现有 `xhsBridge.js`，并由 Electron Main 的 Collector Service 读取页面已经产生的公开响应后提交 localhost API。
+
+XHS BrowserWindow 与 Workbench 都使用 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true`。Renderer 只拿到 `desktop/preload.cjs` 的窄 IPC；XHS 页面不会获得 Node API，也不会向 localhost API 直接发请求。登录状态只依赖 Chromium session persistence，应用不读取或导出 Cookie、密码或 localStorage 登录凭证。
+
+开发阶段保留 Chrome unpacked extension 作为 fallback；普通用户路径不需要 Chrome developer mode 或手动加载扩展。完整采集任务与安全边界见 [`DESKTOP_COLLECTOR.md`](DESKTOP_COLLECTOR.md)。
 
 ## 后续验收
 
 正式版本必须验证：单个 `.exe` 下载与安装、双击启动、无 Node/npm、应用内 XHS 正常登录且会话持久、Collector 可用、全部数据位于 userData、升级不丢数据、GitHub Release 可直接下载安装。
 
-Option B 只在后续明确批准并完成设计后评估；不得在本 Batch 为绕过 spike 失败而重写 Collector。当前桌面壳、安装包和 CI 已可独立工作，Collector 兼容性失败不会阻塞 EXE 构建。
+Batch 04.1 已实现 Option B 的结构化桌面 Collector 骨架；真实登录、公开页面采集和基线任务仍必须在本地人工验收。Option A 失败实验只保留为兼容性记录，不作为普通用户路径。
 
 ## 签名与发布边界
 

@@ -11,6 +11,7 @@ import { createDiscoveryApiHandler } from './discovery-api.mjs';
 import { createMatchingApiHandler } from './matching-api.mjs';
 import { createOpportunitiesApiHandler } from './opportunities-api.mjs';
 import { createSignalsApiHandler } from './signals-api.mjs';
+import { createCorsPolicy, enforceCors } from './cors.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -52,14 +53,16 @@ async function serveProduction(request, response, api) {
   }
 }
 
-export async function startServer({ host, port, production = process.argv.includes('--production'), runtimeRoot } = {}) {
+export async function startServer({ host, port, production = process.argv.includes('--production'), runtimeRoot, allowedOrigins } = {}) {
   const resolvedRuntimeRoot = resolve(runtimeRoot || process.env.REDBOOK_RUNTIME_ROOT || resolve(root, 'data'));
   const resolvedHost = production ? '127.0.0.1' : (host || process.env.HOST || '127.0.0.1');
   const requestedPort = port ?? (process.env.PORT ? Number(process.env.PORT) : production ? 0 : 5173);
   if (!Number.isInteger(requestedPort) || requestedPort < 0 || requestedPort > 65535) throw new TypeError('PORT 必须是 0–65535 的整数');
   const { api } = createApi(resolvedRuntimeRoot);
+  const corsPolicy = createCorsPolicy({ production, allowedOrigins });
   let vite;
   const server = createServer(async (request, response) => {
+    if (enforceCors(request, response, corsPolicy)) return;
     if (production) return serveProduction(request, response, api);
     if (request.url.startsWith('/api/')) return api(request, response);
     vite ||= await (await import('vite')).createServer({ configFile: resolve(root, 'apps/web/vite.config.mjs'), server: { middlewareMode: true } });

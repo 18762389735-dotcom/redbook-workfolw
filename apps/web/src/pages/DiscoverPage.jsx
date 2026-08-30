@@ -52,6 +52,12 @@ export function DiscoverPage() {
   const [data, setData] = useState({ signals: [], creators: [], discovery: { outliers: [], clusters: [] }, latestTaskId: null });
   const [state, setState] = useState('loading');
   const [filter, setFilter] = useState('all');
+  const [desktop, setDesktop] = useState(null);
+  const [xhsStatus, setXhsStatus] = useState({ open: false, ready: false });
+  const [collectorTask, setCollectorTask] = useState(null);
+  const [desktopBusy, setDesktopBusy] = useState('');
+  const [desktopError, setDesktopError] = useState('');
+  const [baselineLimit, setBaselineLimit] = useState(12);
   const load = async () => {
     setState('loading');
     try {
@@ -61,6 +67,26 @@ export function DiscoverPage() {
     } catch { setState('error'); }
   };
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const api = window.redbookDesktop;
+    if (!api?.isDesktop) return undefined;
+    setDesktop(api);
+    api.getXhsStatus().then(setXhsStatus).catch(() => {});
+    api.listCollectorTasks().then((tasks) => setCollectorTask(tasks.find((item) => ['queued', 'running'].includes(item.status)) || tasks[0] || null)).catch(() => {});
+    const offStatus = api.onXhsStatusChanged(setXhsStatus);
+    const offTask = api.onCollectorTaskChanged((task) => {
+      setCollectorTask(task);
+      if (['completed', 'partial', 'failed', 'cancelled'].includes(task.status)) load();
+    });
+    return () => { offStatus?.(); offTask?.(); };
+  }, []);
+  const runDesktop = async (name, action) => {
+    setDesktopBusy(name); setDesktopError('');
+    try { await action(); await load(); } catch (error) { setDesktopError(error.message || String(error)); }
+    finally { setDesktopBusy(''); }
+  };
+  const taskProgress = collectorTask?.progress ? `${collectorTask.progress.current || 0} / ${collectorTask.progress.total || 0}` : '';
+  const taskLabel = { queued: '排队中', running: '采集中', completed: '已完成', partial: '部分完成', failed: '失败', cancelled: '已取消' }[collectorTask?.status] || '';
   const creatorsByUser = useMemo(() => new Map(data.creators.map((item) => [item.userId, item])), [data.creators]);
   const signalsById = useMemo(() => new Map(data.signals.map((item) => [item.id, item])), [data.signals]);
   const assessmentsBySignal = useMemo(() => new Map(data.discovery.outliers.map((item) => [item.signalId, item])), [data.discovery.outliers]);
@@ -69,6 +95,7 @@ export function DiscoverPage() {
   return <>
     <PageHeader title="发现" description="只展示平台证据；账号适配与个人适配均未评估。" actions={<button className="button button--primary" onClick={load}>刷新数据</button>} />
     <section className="collector-guide"><div><strong>Beav-derived Collector</strong><p>支持搜索页真实 keyword、当前博主资料与低频近期基线；不读取或保存 Cookie、密码。</p></div><code>vendor/beav/xhs-collector</code></section>
+    {desktop ? <section className="desktop-collector" aria-label="桌面版小红书采集"><div className="desktop-collector-head"><div><strong>桌面版小红书会话</strong><p>登录状态由应用的持久化会话保存，采集只读取当前页面已返回的公开内容。</p></div><StatusTag tone={xhsStatus.open ? 'green' : 'neutral'}>{xhsStatus.open ? (xhsStatus.ready ? '已打开' : '加载中') : '未打开'}</StatusTag></div><div className="desktop-collector-actions"><button className="button button--primary" onClick={() => runDesktop('open', async () => { const status = await desktop.openXhs(); setXhsStatus(status); })} disabled={desktopBusy !== ''}>{desktopBusy === 'open' ? '正在打开…' : '打开小红书'}</button><button className="button button--secondary" onClick={() => runDesktop('visible', () => desktop.collectVisible())} disabled={desktopBusy !== '' || !xhsStatus.open}>{desktopBusy === 'visible' ? '正在采集…' : '采集当前页'}</button><button className="button button--secondary" onClick={() => runDesktop('creator', () => desktop.collectCreator())} disabled={desktopBusy !== '' || !xhsStatus.open}>采集当前博主</button><label className="desktop-baseline-control">基线数量 <input type="number" min="1" max="20" value={baselineLimit} onChange={(event) => setBaselineLimit(Math.min(20, Math.max(1, Number(event.target.value) || 12)))} /></label><button className="button button--secondary" onClick={() => runDesktop('baseline', () => desktop.collectCreatorBaseline(baselineLimit))} disabled={desktopBusy !== '' || !xhsStatus.open}>采集近期基线</button>{collectorTask && ['queued', 'running'].includes(collectorTask.status) ? <button className="button button--quiet" onClick={() => runDesktop('cancel', () => desktop.cancelCollectorTask(collectorTask.id))}>取消</button> : null}</div>{collectorTask && <p className="desktop-task-status">任务：{taskLabel} {taskProgress}{collectorTask.result ? ` · 成功 ${collectorTask.result.received || 0} 条` : ''}</p>}{desktopError && <p className="desktop-collector-error" role="alert">{desktopError}</p>}</section> : null}
     <div className="hot-filter-tabs" aria-label="发现内容筛选">{tabs.map(([key, label]) => <button key={key} className={filter === key ? 'hot-filter-tab hot-filter-tab--active' : 'hot-filter-tab'} onClick={() => setFilter(key)}>{label}</button>)}</div>
     {state === 'loading' && <div className="hot-empty-state"><strong>正在读取平台证据</strong><p>无需等待 Agent，也不会读取个人上下文。</p></div>}
     {state === 'error' && <div className="hot-empty-state"><strong>无法读取本地数据</strong><p>请确认本地服务正在运行后重试。</p></div>}

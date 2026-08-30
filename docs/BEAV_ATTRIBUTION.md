@@ -10,13 +10,17 @@ Copied upstream file:
 
 该文件用于在网页主世界旁路记录已经成功返回的小红书/RedNote JSON 响应；本项目仅增加了 attribution 文件头，未删除原作者版权或许可信息。
 
-Local derived/new files:
+Local derived/new files (written for this project, not copied as Beav originals):
 
-- `vendor/beav/xhs-collector/beavExtractors.js`
 - `vendor/beav/xhs-collector/background.js`
 - `vendor/beav/xhs-collector/popup.html`
 - `vendor/beav/xhs-collector/popup.js`
 - `vendor/beav/xhs-collector/manifest.json`
+- `vendor/beav/xhs-collector/collector-payload.js`
+
+`vendor/beav/xhs-collector/beavExtractors.js` is highly derived extractor logic and is documented separately from the thin adapter files above.
+
+`collector-payload.js` 是本项目新增的纯 payload helper，供 Chrome fallback 与 Electron Collector 共用；它不是 Beav 原始文件。
 
 `beavExtractors.js` 高度派生自上游 `Plugin/src/background.js` 中的 `extractXhsBloggerPayload` 与 `extractXhsBloggerNotesPayload`，并复用了 Blogger Notes 的 API/RPA fallback、DOM note links、INITIAL_STATE 和 `user_posted` 观察思路。`extractObservedNoteFeed` 仅派生自 `extractXhsNoteFeedByUrlFromCurrentPage` 的安全 `readFeedFromStore` 部分，用于等待页面自身已经发出且被 xhsBridge 观察到的 `/feed` 响应。本地修改包括：默认 12 / 最大 20 条、unknown 指标保留 `null`、只保留所需字段、移除 Desktop/RedClaw 连接。上游涉及手工读取 Cookie、localStorage 与请求签名的直接 feed 请求路径没有复制。
 

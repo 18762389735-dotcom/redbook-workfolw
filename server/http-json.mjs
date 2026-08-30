@@ -1,5 +1,5 @@
 export function json(response, status, value) {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*' });
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   if (status === 204) return response.end();
   response.end(JSON.stringify(value));
 }

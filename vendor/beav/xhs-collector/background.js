@@ -1,5 +1,6 @@
 /* Local adapter around the attributed Beav-derived extractors. */
 import { extractObservedNoteFeed, extractVisibleContext, extractXhsBloggerNotesPayload, extractXhsBloggerPayload } from './beavExtractors.js';
+import { extractCandidateCards, buildVisibleSignalPayload } from './collector-payload.js';
 
 const DEFAULT_ENDPOINT = 'http://localhost:5173/api/signals/ingest';
 const TASKS_KEY = 'collectorTasks';
@@ -35,20 +36,6 @@ async function pageResponses(tabId) {
   return result;
 }
 
-function candidates(records) {
-  const found = new Map();
-  const visit = (value, seen = new WeakSet()) => {
-    if (!value || typeof value !== 'object' || seen.has(value)) return;
-    seen.add(value);
-    const card = value.note_card || value.noteCard || value.note || value;
-    const noteId = card.note_id || card.noteId || card.id;
-    if (noteId && (card.title || card.display_title || card.desc || card.user || card.author)) found.set(String(noteId), card);
-    for (const child of Object.values(value)) visit(child, seen);
-  };
-  records.forEach((record) => visit(record?.result));
-  return [...found.values()];
-}
-
 async function postJson(path, body) {
   const response = await fetch(await endpoint(path), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const payload = await response.json().catch(() => ({}));
@@ -66,10 +53,10 @@ async function collectVisibleNotes(tab, task) {
   const pageUrl = new URL(tab.url);
   const observedKeyword = /^\/search_result\/?$/i.test(pageUrl.pathname) ? pageUrl.searchParams.get('keyword') : null;
   const capturedAt = now();
-  const signals = candidates(records).map((raw) => {
+  const signals = extractCandidateCards(records).map((raw) => {
     const noteId = String(raw.note_id || raw.noteId || raw.id || '');
     const observedUrl = links.get(noteId) || (noteId === currentId ? context.pageUrl || tab.url : null);
-    return { ...raw, ...(observedUrl ? { url: observedUrl } : {}), source: { provider: 'beav-derived-browser-extension', method: 'visible-notes', keyword: context.keyword || observedKeyword || null, taskId: task.id, capturedAt } };
+    return buildVisibleSignalPayload(raw, { url: observedUrl, keyword: context.keyword || observedKeyword || null, taskId: task.id, capturedAt, provider: 'beav-derived-browser-extension' });
   });
   if (!signals.length) throw new Error('当前页面尚未观察到可采集的公开笔记。请刷新页面后再试。');
   const result = await postJson('/api/signals/ingest', { signals });
