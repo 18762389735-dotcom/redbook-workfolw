@@ -2,8 +2,39 @@
   "name": "redbook-workflow",
   "version": "0.1.0",
   "private": true,
+  "description": "Local-first Xiaohongshu content operations workbench",
+  "author": "Redbook Workflow contributors",
+  "main": "desktop/main.cjs",
   "type": "module",
   "engines": { "node": ">=20" },
-  "scripts": { "dev": "node server/index.mjs", "build": "vite build --config apps/web/vite.config.mjs", "start": "node server/index.mjs --production", "test": "node --test test/*.test.mjs" },
-  "dependencies": { "@vitejs/plugin-react": "5.0.4", "react": "19.2.0", "react-dom": "19.2.0", "vite": "6.4.2" }
+  "scripts": { "dev": "node server/index.mjs", "build": "vite build --config apps/web/vite.config.mjs", "start": "node server/index.mjs --production", "desktop": "electron .", "desktop:smoke": "node desktop/smoke.mjs", "desktop:packaged-smoke": "node desktop/packaged-smoke.mjs", "desktop:collector-spike": "electron desktop/collector-spike.cjs", "package:win": "npm run build && electron-builder --win nsis --x64 --publish never", "test": "node --test test/*.test.mjs" },
+  "dependencies": { "@vitejs/plugin-react": "5.0.4", "react": "19.2.0", "react-dom": "19.2.0", "vite": "6.4.2" },
+  "devDependencies": { "electron": "44.0.0", "electron-builder": "26.15.3" },
+  "build": {
+    "appId": "com.redbook.workflow",
+    "productName": "Redbook Workflow",
+    "directories": { "output": "release" },
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "server/**/*",
+      "core/**/*",
+      "providers/**/*",
+      "desktop/**/*",
+      "vendor/beav/xhs-collector/**/*",
+      "package.json",
+      "!data/**",
+      "!test/**",
+      "!release/**",
+      "!*.tmp"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "artifactName": "Redbook-Workflow-Setup-${version}-x64.exe"
+  }
 }

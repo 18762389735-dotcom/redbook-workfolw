@@ -1,0 +1,77 @@
+name: Release Windows x64
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows-x64:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check tag and package version
+        shell: pwsh
+        run: |
+          $package = Get-Content -Raw package.json | ConvertFrom-Json
+          if ($env:GITHUB_REF_NAME -ne "v$($package.version)") {
+            throw "Tag $env:GITHUB_REF_NAME does not match package version $($package.version)"
+          }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit and API tests
+        run: npm test
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Package Windows x64 NSIS installer
+        run: npm run package:win
+
+      - name: Packaged application smoke
+        run: npm run desktop:packaged-smoke
+
+      - name: Collector Option A compatibility spike (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          npm run desktop:collector-spike *> collector-spike-evidence.txt
+          Get-Content collector-spike-evidence.txt
+
+      - name: Installer install, launch and uninstall smoke
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File desktop/installer-smoke.ps1 *> installer-smoke-evidence.txt
+          $smokeExit = $LASTEXITCODE
+          Get-Content installer-smoke-evidence.txt
+          if ($smokeExit -ne 0) { exit $smokeExit }
+
+      - name: Create SHA256 checksum
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath release -Filter 'Redbook-Workflow-Setup-*-x64.exe' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer not found' }
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash
+          "$hash  $($installer.Name)" | Set-Content -LiteralPath release/SHA256SUMS.txt -Encoding ascii
+          Get-Content release/SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installer = Get-ChildItem -LiteralPath release -Filter 'Redbook-Workflow-Setup-*-x64.exe' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          gh release create $env:GITHUB_REF_NAME $installer.FullName release/SHA256SUMS.txt installer-smoke-evidence.txt collector-spike-evidence.txt --title "Redbook Workflow $env:GITHUB_REF_NAME" --generate-notes

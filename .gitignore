@@ -5,4 +5,5 @@ data/creators.json
 data/account.json
 data/opportunities.json
 data/*.tmp
+release/
 .DS_Store
