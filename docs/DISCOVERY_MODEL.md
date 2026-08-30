@@ -2,11 +2,17 @@
 
 ## 证据对象
 
-**Signal** 是一条归一化的小红书公开笔记事实。正常发现笔记与 Creator Baseline 共用同一 Schema；后者只通过 `source.method = "creator-baseline"` 标识采集用途。
+**Signal** 是一条归一化的小红书公开笔记事实。标题、正文、作者、互动、媒体、发布时间与真实 URL 属于 platform facts。
+
+**Observation** 是采集 provenance，记录 `provider`、`method`、`keyword`、`taskId` 与 `capturedAt`。同一 Signal 可在自然发现、不同搜索关键词及 Creator Baseline 中被多次观察。`source` 只是 latest observation 的兼容字段，角色判断必须使用不可覆盖的 `observations`。
 
 **Creator Snapshot** 是某次从真实博主页取得的作者公开资料快照，包括 userId、profileUrl 与可观察指标。缺失字段保持 `null`，不以 0 代替 unknown。
 
-**Creator Baseline** 是同一 authorId 的近期公开笔记集合。Outlier 计算会排除目标笔记，只使用点赞为有限数字的样本；至少 3 篇才足以判断。
+**Creator Baseline** 是同一 authorId、具有 `creator-baseline` observation 的近期公开笔记集合。它是 supporting evidence，不是自然 Platform Discovery sample。Outlier 计算会排除目标笔记，只使用点赞为有限数字的样本；至少 3 篇才足以判断。
+
+## Discovery eligibility
+
+只有至少存在一条 `visible-notes` 或 `current-note` observation 的 Signal 才能进入 Discovery target pool。baseline-only Signals 不生成 Outlier target，也不参与 title/keyword cluster 或独立作者计数。一个同时具有 discovery 与 baseline observations 的 Signal 保留两个角色：可以成为 target，也可以为其他 target 提供 baseline。
 
 ## Outlier
 
@@ -31,7 +37,7 @@ ratio = targetLikes / max(medianLikes, 10)
 
 目前只有两种可解释来源：
 
-- Search Context Cluster：按真实 `source.keyword` 分组，仅说明同一次搜索语境中出现这些样本。
+- Search Context Cluster：按历史 discovery observations 中的真实 keyword 分组，仅说明相应搜索语境中出现这些样本。一篇笔记在两个真实关键词下被观察到时，可以支持两个 cluster。
 - Independent-author title overlap：标题二字共现，至少 3 位独立作者；3 位为 low，4 位及以上最多 medium。
 
 Cluster 始终保留 supporting signal IDs、current/reference/unknown 分层、独立作者数、已观察 outlier、缺失证据、限制和建议补证动作。第一版不输出 high confidence、strong signal 或加权总分。

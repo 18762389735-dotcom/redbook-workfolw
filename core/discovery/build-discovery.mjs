@@ -1,15 +1,13 @@
 import { assessOutlier } from './outlier.mjs';
 import { buildKeywordClusters, buildTitleOverlapClusters } from './clustering.mjs';
+import { isDiscoveryEligibleSignal } from '../signals/provenance.mjs';
 
 export function buildDiscovery({ signals = [], creators = [], now = new Date() } = {}) {
-  // A baseline note is still a real platform Signal and may itself be assessed
-  // against the author's other baseline notes. assessOutlier always excludes
-  // the target note, preventing self-inflation.
-  const targetSignals = signals;
-  const outliers = targetSignals.map((signal) => assessOutlier(signal, signals, creators, now));
+  const discoverySignals = signals.filter(isDiscoveryEligibleSignal);
+  const outliers = discoverySignals.map((signal) => assessOutlier(signal, signals, creators, now));
   const clusters = [
-    ...buildKeywordClusters(targetSignals, outliers, now),
-    ...buildTitleOverlapClusters(targetSignals, outliers, now),
+    ...buildKeywordClusters(discoverySignals, outliers, now),
+    ...buildTitleOverlapClusters(discoverySignals, outliers, now),
   ];
   return {
     generatedAt: new Date(now).toISOString(),

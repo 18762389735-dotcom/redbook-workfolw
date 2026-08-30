@@ -8,12 +8,19 @@ const value = (item) => item === null || item === undefined || item === '' ? emp
 const date = (item) => item ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item)) : empty;
 const metric = (item) => item === null || item === undefined ? empty : new Intl.NumberFormat('zh-CN').format(item);
 const tone = (status) => status === 'observed' ? 'red' : status === 'not_observed' ? 'green' : status === 'insufficient' ? 'orange' : 'neutral';
+const observations = (signal) => signal.observations?.length ? signal.observations : [{ ...signal.source, capturedAt: signal.capturedAt }];
+const role = (signal) => {
+  const methods = new Set(observations(signal).map((item) => item.method));
+  const discovered = methods.has('visible-notes') || methods.has('current-note');
+  const baseline = methods.has('creator-baseline');
+  return discovered && baseline ? '发现 + 基线' : baseline ? '基线' : discovered ? '发现' : '其他';
+};
 
 function SignalTable({ signals, creatorsByUser, assessmentsBySignal }) {
   return <div className="signal-table-wrap"><table className="signal-table"><thead><tr><th>笔记</th><th>作者 / 粉丝</th><th>互动</th><th>发布时间</th><th>来源</th><th>采集时间</th></tr></thead><tbody>{signals.map((signal) => {
     const creator = creatorsByUser.get(signal.author.id);
     const assessment = assessmentsBySignal.get(signal.id);
-    return <tr key={signal.id}><td><strong>{value(signal.title)}</strong><small>{signal.url ? <a href={signal.url} target="_blank" rel="noreferrer">打开原链接</a> : empty}</small></td><td>{value(signal.author.name)}<small>{metric(creator?.metrics?.followers ?? signal.author.followerCount)} 粉丝</small>{!creator && <em className="evidence-gap">缺博主资料</em>}{(!assessment || assessment.baseline.sampleCount < 3) && <em className="evidence-gap">缺作者近期基线</em>}</td><td><span>赞 {metric(signal.metrics.likes)}</span><span>藏 {metric(signal.metrics.favorites)}</span><span>评 {metric(signal.metrics.comments)}</span><span>转 {metric(signal.metrics.shares)}</span></td><td>{date(signal.publishedAt)}</td><td><StatusTag tone="neutral">{value(signal.source.provider)}</StatusTag><small>{value(signal.source.method)}</small>{signal.source.keyword && <small>关键词：{signal.source.keyword}</small>}</td><td>{date(signal.capturedAt)}</td></tr>;
+    return <tr key={signal.id}><td><strong>{value(signal.title)}</strong><small>{signal.url ? <a href={signal.url} target="_blank" rel="noreferrer">打开原链接</a> : empty}</small></td><td>{value(signal.author.name)}<small>{metric(creator?.metrics?.followers ?? signal.author.followerCount)} 粉丝</small>{!creator && <em className="evidence-gap">缺博主资料</em>}{(!assessment || assessment.baseline.sampleCount < 3) && <em className="evidence-gap">缺作者近期基线</em>}</td><td><span>赞 {metric(signal.metrics.likes)}</span><span>藏 {metric(signal.metrics.favorites)}</span><span>评 {metric(signal.metrics.comments)}</span><span>转 {metric(signal.metrics.shares)}</span></td><td>{date(signal.publishedAt)}</td><td><StatusTag tone="neutral">{role(signal)}</StatusTag><small>{value(signal.source.method)} · {observations(signal).length} 次观察</small>{observations(signal).filter((item) => item.keyword).map((item) => <small key={`${item.taskId}:${item.keyword}`}>关键词：{item.keyword}</small>)}</td><td>{date(signal.capturedAt)}</td></tr>;
   })}</tbody></table></div>;
 }
 
@@ -57,7 +64,7 @@ export function DiscoverPage() {
   const creatorsByUser = useMemo(() => new Map(data.creators.map((item) => [item.userId, item])), [data.creators]);
   const signalsById = useMemo(() => new Map(data.signals.map((item) => [item.id, item])), [data.signals]);
   const assessmentsBySignal = useMemo(() => new Map(data.discovery.outliers.map((item) => [item.signalId, item])), [data.discovery.outliers]);
-  const visibleSignals = filter === 'latest' ? data.signals.filter((signal) => data.latestTaskId && signal.source.taskId === data.latestTaskId) : data.signals;
+  const visibleSignals = filter === 'latest' ? data.signals.filter((signal) => data.latestTaskId && observations(signal).some((item) => item.taskId === data.latestTaskId)) : data.signals;
   const tabs = [['all', '全部笔记'], ['latest', '最新采集'], ['outliers', '异常候选'], ['clusters', '信号簇']];
   return <>
     <PageHeader title="发现" description="只展示平台证据；账号适配与个人适配均未评估。" actions={<button className="button button--primary" onClick={load}>刷新数据</button>} />

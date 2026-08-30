@@ -1,4 +1,5 @@
 import { classifyPublishedAt } from './time.mjs';
+import { getObservedKeywords } from '../signals/provenance.mjs';
 
 const excludedTokens = new Set(['小红', '笔记', '我们', '这个', '一个', '真的']);
 
@@ -54,11 +55,11 @@ function buildCluster({ id, name, kind, signals, outliers, now }) {
 export function buildKeywordClusters(signals, outliers, now) {
   const groups = new Map();
   for (const signal of signals) {
-    const keyword = signal.source?.keyword?.trim();
-    if (!keyword) continue;
-    const group = groups.get(keyword) || [];
-    group.push(signal);
-    groups.set(keyword, group);
+    for (const keyword of getObservedKeywords(signal)) {
+      const group = groups.get(keyword) || [];
+      group.push(signal);
+      groups.set(keyword, group);
+    }
   }
   return [...groups.entries()].map(([keyword, items]) => buildCluster({ id: `keyword:${encodeURIComponent(keyword)}`, name: `搜索语境：${keyword}`, kind: 'keyword', signals: items, outliers, now }));
 }

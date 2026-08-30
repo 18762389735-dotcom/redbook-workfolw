@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createObservation, mergeObservations } from './provenance.mjs';
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -15,19 +16,23 @@ export function createSignal(input, now = new Date().toISOString()) {
   const provider = text(source.provider);
   const method = text(source.method);
   if (!provider || !method) throw new TypeError('signal.source.provider 和 signal.source.method 是必填字段');
+  const capturedAt = text(input.capturedAt) || now;
+  const normalizedSource = { provider, method, keyword: text(source.keyword), taskId: text(source.taskId) || randomUUID() };
+  const observations = mergeObservations(input.observations, [createObservation(normalizedSource, capturedAt)]);
   return {
     id: text(input.id) || `xiaohongshu:${noteId}`,
     platform: 'xiaohongshu', noteId, url: text(input.url), title: text(input.title), bodyText: text(input.bodyText),
     author: { id: text(author.id), name: text(author.name), profileUrl: text(author.profileUrl), followerCount: number(author.followerCount) },
     metrics: { likes: number(metrics.likes), favorites: number(metrics.favorites), comments: number(metrics.comments), shares: number(metrics.shares) },
     media: { cover: text(media.cover), images: Array.isArray(media.images) ? media.images.filter(text) : [], type: text(media.type) },
-    publishedAt: text(input.publishedAt), capturedAt: text(input.capturedAt) || now,
-    source: { provider, method, keyword: text(source.keyword), taskId: text(source.taskId) || randomUUID() },
+    publishedAt: text(input.publishedAt), capturedAt,
+    source: normalizedSource,
+    observations,
   };
 }
 
 export function comparableSignal(signal) {
-  const { capturedAt, id, source, ...platformFacts } = signal;
+  const { capturedAt, id, source, observations, ...platformFacts } = signal;
   return JSON.stringify(platformFacts);
 }
 

@@ -1,3 +1,5 @@
+import { hasObservationMethod } from '../signals/provenance.mjs';
+
 function median(values) {
   const sorted = values.filter(Number.isFinite).sort((left, right) => left - right);
   if (!sorted.length) return null;
@@ -12,7 +14,7 @@ export function assessOutlier(target, signals, creators, now = new Date()) {
   const baselineSignals = authorId ? signals.filter((signal) => (
     signal.author?.id === authorId
     && signal.noteId !== target.noteId
-    && signal.source?.method === 'creator-baseline'
+    && hasObservationMethod(signal, 'creator-baseline')
     && Number.isFinite(signal.metrics?.likes)
   )) : [];
   const recentLikes = baselineSignals.map((signal) => signal.metrics.likes);

@@ -13,7 +13,8 @@ const signal = ({ noteId, authorId = 'author-1', likes = 100, method = 'creator-
   author: { id: authorId, name: authorId, followerCount: null },
   metrics: { likes },
   publishedAt,
-  source: { method, keyword },
+  capturedAt: '2026-08-25T00:00:00.000Z',
+  source: { provider: 'test-provider', method, keyword, taskId: `task-${noteId}` },
 });
 const creator = (followers = 1000) => ({ userId: 'author-1', metrics: { followers } });
 const baseline = (count = 3) => Array.from({ length: count }, (_, index) => signal({ noteId: `baseline-${index}`, likes: 100 }));
@@ -51,13 +52,10 @@ test('target note is excluded from its own creator baseline', () => {
   assert.ok(!result.baseline.sampleSignalIds.includes('xiaohongshu:target'));
 });
 
-test('a baseline Signal can be assessed against the author other baseline notes', () => {
-  const signals = [signal({ noteId: 'target', likes: 600 }), ...baseline()];
-  const result = buildDiscovery({ signals, creators: [creator()], now: NOW });
-  const assessment = result.outliers.find((item) => item.signalId === 'xiaohongshu:target');
-  assert.equal(assessment.status, 'observed');
-  assert.equal(assessment.baseline.sampleCount, 3);
-  assert.ok(!assessment.baseline.sampleSignalIds.includes('xiaohongshu:target'));
+test('baseline-only Signals are evidence, not Discovery targets', () => {
+  const result = buildDiscovery({ signals: baseline(), creators: [creator()], now: NOW });
+  assert.deepEqual(result.outliers, []);
+  assert.deepEqual(result.clusters, []);
 });
 
 test('publishedAt time buckets preserve current, reference, and unknown', () => {
