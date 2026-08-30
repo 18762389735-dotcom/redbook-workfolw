@@ -1,1 +1,23 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>采集</title><style>body{width:300px;margin:0;padding:18px;color:#312829;background:#fffaf8;font:14px/1.5 ui-sans-serif,system-ui}h1{font-size:17px;margin:0 0 8px}p{color:#725f62}button{width:100%;padding:10px;border:0;border-radius:8px;background:#e94952;color:#fff;font-weight:700;cursor:pointer}button:disabled{opacity:.6}small{display:block;margin-top:12px;color:#8e7779}.error{color:#bd2630}</style></head><body><h1>采集当前公开页面</h1><p>仅采集页面已加载的公开内容，并发送到本机 Signal Store。</p><button id="collect">采集当前页</button><small id="status">请先刷新一次页面，让采集桥接观察公开响应。</small><script src="popup.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小红书采集</title>
+  <style>
+    body{width:320px;margin:0;padding:18px;color:#312829;background:#fffaf8;font:14px/1.5 ui-sans-serif,system-ui}h1{font-size:17px;margin:0 0 6px}p{margin:0 0 14px;color:#725f62}.actions{display:grid;gap:9px}button{width:100%;padding:10px;border:0;border-radius:8px;background:#e94952;color:#fff;font-weight:700;cursor:pointer}button.secondary{border:1px solid #efcbd0;background:#fff;color:#ca3542}button.quiet{background:#eee5e4;color:#69595a}button:disabled{opacity:.55}.baseline{display:grid;grid-template-columns:1fr 68px;gap:8px}.baseline input{width:100%;padding:8px;border:1px solid #ddcfd0;border-radius:8px;background:#fff}small{display:block;margin-top:12px;color:#8e7779}.error{color:#bd2630}.progress{margin-top:12px;padding:10px;border-radius:8px;background:#f7eeee}.progress strong{display:block}.hidden{display:none}
+  </style>
+</head>
+<body>
+  <h1>采集公开平台证据</h1>
+  <p>仅使用当前正常登录会话中的公开内容，不读取或保存 Cookie、密码。</p>
+  <div class="actions">
+    <button id="collect">采集当前页</button>
+    <button id="creator" class="secondary">采集当前博主</button>
+    <div class="baseline"><button id="baseline" class="secondary">采集近期笔记基线</button><input id="limit" type="number" min="1" max="20" value="12" aria-label="基线笔记数量"></div>
+  </div>
+  <div id="progress" class="progress hidden"><strong id="progress-title"></strong><span id="progress-detail"></span><button id="cancel" class="quiet hidden">取消任务</button></div>
+  <small id="status">搜索页采集会保留真实 keyword 与页面中实际观察到的笔记链接。</small>
+  <script src="popup.js"></script>
+</body>
+</html>

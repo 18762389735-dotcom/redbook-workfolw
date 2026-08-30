@@ -95,6 +95,27 @@ test('normalizer reads the observed XHS interact_info string structure', () => {
   assert.deepEqual(signal.metrics, { likes: 2204, favorites: 575, comments: 152, shares: 121 });
 });
 
+test('normalizer also reads camel-case interaction data returned by profile state', () => {
+  const signal = normalizeXiaohongshuSignal(rawSignal({
+    liked_count: undefined,
+    interactInfo: { likedCount: '1.2万', collectedCount: '300', commentCount: '20', shareCount: '5' },
+  }), source('task-camel', '2026-08-30T10:00:00.000Z'));
+  assert.deepEqual(signal.metrics, { likes: 12000, favorites: 300, comments: 20, shares: 5 });
+});
+
+test('a sparse baseline observation preserves previously observed platform facts', async () => {
+  const store = await createStore();
+  const url = 'https://www.xiaohongshu.com/explore/note-1?xsec_token=observed';
+  await ingestSignals(store, { signals: [rawSignal({ liked_count: 6206, url })] });
+  const result = await ingestSignals(store, { signals: [rawSignal({ liked_count: undefined, title: undefined, url: undefined, source: source('baseline-task', '2026-08-30T11:00:00.000Z', { method: 'creator-baseline' }) })] });
+  assert.deepEqual(result, { received: 1, created: 0, updated: 0, duplicates: 1 });
+  const [record] = await store.list();
+  assert.equal(record.metrics.likes, 6206);
+  assert.equal(record.title, '真实响应字段示例');
+  assert.equal(record.url, url);
+  assert.equal(record.source.method, 'creator-baseline');
+});
+
 test('latest task metadata identifies every record touched by the newest batch', async () => {
   const store = await createStore();
   await ingestSignals(store, { signals: [

@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { comparableSignal } from './schema.mjs';
+import { comparableSignal, mergeSignalFacts } from './schema.mjs';
 
 export class SignalStore {
   constructor(filePath) { this.filePath = filePath; this.records = new Map(); this.loaded = false; this.pendingWrite = Promise.resolve(); }
@@ -10,5 +10,5 @@ export class SignalStore {
   async listWithMetadata() { const signals = await this.list(); const latest = signals.find((signal) => signal.source?.taskId) || null; return { signals, latestTaskId: latest?.source?.taskId || null, latestCapturedAt: latest?.capturedAt || null }; }
   async get(id) { await this.load(); return [...this.records.values()].find((record) => record.id === id) || null; }
   async delete(id) { await this.load(); const record = await this.get(id); if (!record) return false; this.records.delete(record.noteId); await this.persist(); return true; }
-  async upsertMany(signals) { await this.load(); const result = { received: signals.length, created: 0, updated: 0, duplicates: 0 }; for (const signal of signals) { const existing = this.records.get(signal.noteId); if (!existing) { this.records.set(signal.noteId, signal); result.created += 1; continue; } if (comparableSignal(existing) === comparableSignal(signal)) { this.records.set(signal.noteId, { ...existing, capturedAt: signal.capturedAt, source: signal.source }); result.duplicates += 1; continue; } this.records.set(signal.noteId, signal); result.updated += 1; } if (signals.length) await this.persist(); return result; }
+  async upsertMany(signals) { await this.load(); const result = { received: signals.length, created: 0, updated: 0, duplicates: 0 }; for (const signal of signals) { const existing = this.records.get(signal.noteId); if (!existing) { this.records.set(signal.noteId, signal); result.created += 1; continue; } const merged = mergeSignalFacts(existing, signal); if (comparableSignal(existing) === comparableSignal(merged)) { this.records.set(signal.noteId, { ...existing, capturedAt: signal.capturedAt, source: signal.source }); result.duplicates += 1; continue; } this.records.set(signal.noteId, merged); result.updated += 1; } if (signals.length) await this.persist(); return result; }
 }

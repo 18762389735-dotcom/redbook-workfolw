@@ -30,3 +30,35 @@ export function comparableSignal(signal) {
   const { capturedAt, id, source, ...platformFacts } = signal;
   return JSON.stringify(platformFacts);
 }
+
+// A less complete collector observation must not erase a previously observed
+// platform fact. New non-null facts still replace old values and provenance is
+// always refreshed by the Store.
+export function mergeSignalFacts(existing, incoming) {
+  const keep = (next, previous) => next === null || next === undefined ? previous : next;
+  return {
+    ...incoming,
+    id: existing.id,
+    url: keep(incoming.url, existing.url),
+    title: keep(incoming.title, existing.title),
+    bodyText: keep(incoming.bodyText, existing.bodyText),
+    author: {
+      id: keep(incoming.author.id, existing.author.id),
+      name: keep(incoming.author.name, existing.author.name),
+      profileUrl: keep(incoming.author.profileUrl, existing.author.profileUrl),
+      followerCount: keep(incoming.author.followerCount, existing.author.followerCount),
+    },
+    metrics: {
+      likes: keep(incoming.metrics.likes, existing.metrics.likes),
+      favorites: keep(incoming.metrics.favorites, existing.metrics.favorites),
+      comments: keep(incoming.metrics.comments, existing.metrics.comments),
+      shares: keep(incoming.metrics.shares, existing.metrics.shares),
+    },
+    media: {
+      cover: keep(incoming.media.cover, existing.media.cover),
+      images: incoming.media.images.length ? incoming.media.images : existing.media.images,
+      type: keep(incoming.media.type, existing.media.type),
+    },
+    publishedAt: keep(incoming.publishedAt, existing.publishedAt),
+  };
+}

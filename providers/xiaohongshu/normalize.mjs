@@ -28,12 +28,12 @@ export function parseMetric(value) {
 export function normalizeXiaohongshuSignal(raw, source = {}) {
   const card = raw?.note_card || raw?.noteCard || raw?.note || raw;
   const user = card?.user || card?.author || raw?.user || {};
-  const interaction = card?.interact_info || {};
+  const interaction = card?.interact_info || card?.interactInfo || {};
   const noteId = pick(card, ['note_id', 'noteId', 'id']) || pick(raw, ['note_id', 'noteId']);
   return createSignal({
-    noteId: noteId && String(noteId), url: pick(card, ['url', 'noteUrl']), title: pick(card, ['title', 'name']), bodyText: pick(card, ['desc', 'description', 'content', 'bodyText']),
+    noteId: noteId && String(noteId), url: pick(card, ['url', 'noteUrl']), title: pick(card, ['title', 'display_title', 'displayTitle', 'name']), bodyText: pick(card, ['desc', 'description', 'content', 'bodyText']),
     author: { id: pick(user, ['user_id', 'userId', 'id']), name: pick(user, ['nickname', 'name']), profileUrl: pick(user, ['profile_url', 'profileUrl']), followerCount: parseMetric(pick(user, ['follower_count', 'followerCount', 'fans'])) },
-    metrics: { likes: parseMetric(pick(card, ['liked_count', 'likedCount', 'like_count', 'likes']) ?? card?.metrics?.likes ?? interaction.liked_count), favorites: parseMetric(pick(card, ['collected_count', 'collectedCount', 'favorite_count', 'favorites']) ?? card?.metrics?.favorites ?? interaction.collected_count), comments: parseMetric(pick(card, ['comment_count', 'commentCount', 'comments']) ?? card?.metrics?.comments ?? interaction.comment_count), shares: parseMetric(pick(card, ['share_count', 'shareCount', 'shares']) ?? card?.metrics?.shares ?? interaction.share_count) },
+    metrics: { likes: parseMetric(pick(card, ['liked_count', 'likedCount', 'like_count', 'likes']) ?? card?.metrics?.likes ?? interaction.liked_count ?? interaction.likedCount), favorites: parseMetric(pick(card, ['collected_count', 'collectedCount', 'favorite_count', 'favorites']) ?? card?.metrics?.favorites ?? interaction.collected_count ?? interaction.collectedCount), comments: parseMetric(pick(card, ['comment_count', 'commentCount', 'comments']) ?? card?.metrics?.comments ?? interaction.comment_count ?? interaction.commentCount), shares: parseMetric(pick(card, ['share_count', 'shareCount', 'shares']) ?? card?.metrics?.shares ?? interaction.share_count ?? interaction.shareCount) },
     media: { cover: pick(card?.cover, ['url_default', 'url_pre', 'url']) || pick(card, ['cover']) || pick(card?.media, ['cover']), images: Array.isArray(card?.image_list) ? card.image_list.map((item) => pick(item, ['url_default', 'url_pre', 'url'])).filter(Boolean) : Array.isArray(card?.media?.images) ? card.media.images : [], type: pick(card, ['type', 'mediaType']) || pick(card?.media, ['type']) },
     publishedAt: epochToIso(pick(card, ['time', 'publish_time', 'publishedAt'])), capturedAt: source.capturedAt || card.capturedAt, source: { provider: source.provider || 'beav-derived-browser-extension', method: source.method || 'visible-notes', keyword: source.keyword, taskId: source.taskId },
   });
