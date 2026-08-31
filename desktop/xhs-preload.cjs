@@ -29,12 +29,16 @@ window.addEventListener(PAGE_REQUEST_EVENT, async (event) => {
 try {
   const sources = ipcRenderer.sendSync('desktop:beav-xhs-sources-sync');
   if (sources?.pageShim && sources?.xhsBridge && sources?.pageRouteBridge && sources?.pageObserver) {
-    const script = `try { ${sources.pageShim}\n;eval(${JSON.stringify(sources.xhsBridge)});\n;eval(${JSON.stringify(sources.pageRouteBridge)});\n;eval(${JSON.stringify(sources.pageObserver)});\nwindow.__REDBOOK_BEAV_PAGE_OBSERVER_INSTALLED__ = true; } catch (error) { window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ = String(error && error.message || error); }`;
-    webFrame.executeJavaScript(script).catch((error) => {
-      // The marker is deliberately data-only so structural smoke can report
-      // an injection failure without surfacing Electron internals to XHS.
-      webFrame.executeJavaScript(`window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ = ${JSON.stringify(String(error?.message || error))};`).catch(() => {});
-    });
+    const mainWorldScript = `try { eval(${JSON.stringify(sources.xhsBridge)}); eval(${JSON.stringify(sources.pageRouteBridge)}); } catch (error) { window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ = String(error && error.message || error); }`;
+    const isolatedScript = `try { ${sources.pageShim}\n;eval(${JSON.stringify(sources.pageObserver)}); } catch (error) { window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ = String(error && error.message || error); }`;
+    webFrame.executeJavaScript(mainWorldScript)
+      .then(() => webFrame.executeJavaScriptInIsolatedWorld(9876, [{ code: isolatedScript }]))
+      .then(() => webFrame.executeJavaScript('window.__REDBOOK_BEAV_PAGE_OBSERVER_INSTALLED__ = true; window.__REDBOOK_BEAV_XHS_SHIM_INSTALLED__ = true;'))
+      .catch((error) => {
+        // The marker is deliberately data-only so structural smoke can report
+        // an injection failure without surfacing Electron internals to XHS.
+        webFrame.executeJavaScript(`window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ = ${JSON.stringify(String(error?.message || error))};`).catch(() => {});
+      });
   }
 } catch {
   // A normal XHS page remains usable. The collector action reports the issue.
