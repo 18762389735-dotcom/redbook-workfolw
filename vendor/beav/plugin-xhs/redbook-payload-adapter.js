@@ -16,6 +16,14 @@ function safeObservedUrl(value) {
   } catch { return null; }
 }
 
+function safeAssetUrl(value) {
+  try {
+    const parsed = new URL(String(value || ''));
+    if (!/^https?:$/i.test(parsed.protocol)) return null;
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch { return null; }
+}
+
 export function beavNotePayloadToSignalInput(payload, source) {
   const noteId = text(payload?.noteId);
   if (!noteId || /^xhs-\d+$/i.test(noteId)) throw new Error('Beav 当前页 payload 未提供可验证的小红书笔记 ID');
@@ -33,12 +41,30 @@ export function beavCreatorPayloadToCreatorInput(payload, source) {
   const userId = text(payload?.userId);
   if (!userId) throw new Error('Beav 博主 payload 未提供 canonical platform userId');
   return {
-    userId, nickname: text(payload?.nickname), description: text(payload?.description), avatar: safeObservedUrl(payload?.avatar),
+    userId, nickname: text(payload?.nickname), description: text(payload?.description), avatar: safeAssetUrl(payload?.avatar),
     // Beav's current extractor supplies the canonical ID but no separate safe
     // profile URL on a search overlay. This deterministic canonical route is
     // derived only from that donor-provided ID, never from a handle or nickname.
     profileUrl: `https://www.xiaohongshu.com/user/profile/${encodeURIComponent(userId)}`,
     stats: { fans: payload?.stats?.fans ?? null, follows: payload?.stats?.follows ?? null, liked: payload?.stats?.liked ?? null },
+    school: text(payload?.school || payload?.schoolName),
+    publicTags: Array.isArray(payload?.publicTags) ? payload.publicTags.map(text).filter(Boolean) : Array.isArray(payload?.tags) ? payload.tags.map(text).filter(Boolean) : [],
     source: safeObservedUrl(payload?.source), capturedAt: source.capturedAt,
+  };
+}
+
+export function beavCreatorPayloadToAccountFacts(payload, source) {
+  const creator = beavCreatorPayloadToCreatorInput(payload, source);
+  return {
+    accountName: creator.nickname,
+    xhsId: creator.userId,
+    bio: creator.description,
+    avatar: creator.avatar,
+    followers: creator.stats?.fans ?? null,
+    following: creator.stats?.follows ?? null,
+    likesAndCollects: creator.stats?.liked ?? null,
+    school: creator.school || null,
+    publicTags: creator.publicTags || [],
+    profileUrl: creator.profileUrl,
   };
 }

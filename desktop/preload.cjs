@@ -8,6 +8,7 @@ const api = {
   getXhsStatus: () => invoke('desktop:xhs-status'),
   collectVisible: () => invoke('desktop:collect-visible'),
   collectCreator: () => invoke('desktop:collect-creator'),
+  syncAccountProfile: () => invoke('desktop:sync-account-profile'),
   collectCreatorBaseline: (limit) => invoke('desktop:collect-creator-baseline', limit),
   cancelCollectorTask: (taskId) => invoke('desktop:cancel-collector-task', taskId),
   listCollectorTasks: () => invoke('desktop:list-collector-tasks'),

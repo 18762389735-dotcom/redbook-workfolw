@@ -83,6 +83,7 @@ function registerIpc() {
   ipcMain.handle('desktop:xhs-status', () => xhsSession.status());
   ipcMain.handle('desktop:collect-visible', () => collector.collectVisible());
   ipcMain.handle('desktop:collect-creator', () => collector.collectCreator());
+  ipcMain.handle('desktop:sync-account-profile', () => collector.syncAccountProfile());
   ipcMain.handle('desktop:beav-xhs-collector-action', (event, action, payload) => {
     if (!isOwnedXhsSender(event.sender)) throw new Error('只允许小红书会话调用采集器');
     if (action === 'save-xhs') return collector.collectBeavCurrentNote();

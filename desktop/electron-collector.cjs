@@ -198,6 +198,29 @@ class ElectronCollector {
     }
   }
 
+  async syncAccountProfile() {
+    const window = this.xhsSession.getWindow();
+    const pageUrl = safeWindowUrl(window);
+    if (!pageUrl || !/^https:\/\/(www\.)?(xiaohongshu\.com|rednote\.com)\//i.test(pageUrl)) throw new Error('请在小红书会话中打开自己的博主主页');
+    const [{ creator, beavRuntime, beavAdapter }] = [await this.modulesPromise];
+    const task = await this.createTask('creator-profile', 1);
+    try {
+      await this.updateTask(task.id, { status: 'running', startedAt: now() });
+      const raw = await this.page(window, beavRuntime.extractXhsBloggerPayload, [], 'xhs-account-profile');
+      const source = { provider: 'beav-derived-electron-session', method: 'creator-profile', taskId: task.id, capturedAt: now() };
+      const input = beavAdapter.beavCreatorPayloadToCreatorInput(raw, source);
+      const normalized = creator.normalizeXiaohongshuCreator(input, source);
+      const creatorResult = await this.post('/api/creators/ingest', { creators: [normalized] });
+      const facts = beavAdapter.beavCreatorPayloadToAccountFacts(raw, source);
+      const accountResult = await this.post('/api/account/xhs-sync', { facts });
+      await this.updateTask(task.id, { status: 'completed', completedAt: now(), progress: { current: 1, total: 1 }, result: accountResult, creator: normalized });
+      return { task: await (await this.taskStore()).get(task.id), result: accountResult, creator: normalized, creatorResult, account: accountResult.profile || null };
+    } catch (error) {
+      const failed = await this.updateTask(task.id, { status: 'failed', completedAt: now(), error: error.message || String(error) });
+      throw Object.assign(new Error(error.message || String(error)), { task: failed });
+    }
+  }
+
   async confirmBeavOverlayProfile(payload = {}) {
     const window = this.xhsSession.getWindow();
     const pageUrl = safeWindowUrl(window);

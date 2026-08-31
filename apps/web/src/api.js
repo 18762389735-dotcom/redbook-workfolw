@@ -4,6 +4,8 @@ export const listCreators = () => requestJson('/api/creators');
 export const getDiscovery = () => requestJson('/api/discovery');
 export const getAccount = () => requestJson('/api/account');
 export const updateAccount = (profile) => requestJson('/api/account', { method: 'PUT', body: JSON.stringify(profile) });
+export const syncAccountXhs = (facts) => requestJson('/api/account/xhs-sync', { method: 'POST', body: JSON.stringify({ facts }) });
+export const analyzeAccountProfile = () => requestJson('/api/account/analyze', { method: 'POST', body: JSON.stringify({}) });
 export const getMatching = () => requestJson('/api/matching');
 export const getDecisions = () => requestJson('/api/decisions');
 export const getOpportunities = () => requestJson('/api/opportunities');

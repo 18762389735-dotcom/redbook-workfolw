@@ -917,6 +917,7 @@ function getCaptureActionConfig(nextContext) {
       subtitle: '小红书博主页',
       actions: [
         { label: '保存博主资料', action: 'saveBlogger', primary: true, title: '保存当前博主资料到工作台' },
+        { label: '同步为我的账号', action: 'syncAccount', title: '使用当前公开主页生成我的账号画像' },
         { label: '采集博主笔记', action: 'bloggerNotes', title: '采集当前博主主页笔记' },
       ],
     };
@@ -1025,6 +1026,7 @@ function getCaptureActionMeta(action) {
     download: { type: 'xhs:download-current-note', pending: '下载中...', done: '已创建下载任务' },
     comments: { type: 'xhs:collect-current-comments', pending: '采集中...', done: '评论已写入工作台' },
     saveBlogger: { type: 'xhs:collect-current-blogger', pending: '保存中...', done: '博主资料已写入工作台' },
+    syncAccount: { type: 'account:sync-xhs-profile', pending: '同步中...', done: '账号事实与画像已更新' },
     bloggerNotes: { type: 'xhs:collect-blogger-notes', pending: '采集中...', done: '已采集主页笔记' },
     visibleSearch: { type: 'xhs:collect-visible-note-links', pending: '采集中...', done: '已采集当前搜索结果' },
     visibleFeed: { type: 'xhs:collect-visible-note-links', pending: '采集中...', done: '已采集当前可见笔记' },

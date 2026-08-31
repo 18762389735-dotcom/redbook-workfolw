@@ -51,6 +51,8 @@ async function forwardToRedbook(kind, payload, options = {}) {
     };
     const result = kind === 'creator'
       ? await redbookConnector.ingestCreator(payload, taskOptions)
+      : kind === 'account'
+        ? await redbookConnector.syncAccountProfile(payload, taskOptions)
       : kind === 'notes'
         ? await redbookConnector.ingestNotes(payload, taskOptions)
         : await redbookConnector.ingestNote(payload, taskOptions);
@@ -129,6 +131,7 @@ const PLUGIN_CAPTURE_MESSAGE_TYPES = new Set([
   'xhs:download-current-note-zip',
   'xhs:collect-current-comments',
   'xhs:collect-current-blogger',
+  'account:sync-xhs-profile',
   'xhs:collect-blogger-notes',
   'account:bind-current-platform',
   'xhs:collect-note-links',
@@ -555,6 +558,16 @@ async function handleMessage(message, sender) {
         title: createXhsTaskTitle(message.type, message, tabId),
         tabId,
         execute: () => collectXhsBloggerFromTab(tabId),
+      });
+    case 'account:sync-xhs-profile':
+      if (!USER_PROFILE_FEATURE_ENABLED) {
+        throw new Error('账号档案功能暂未开放');
+      }
+      return await enqueueXhsTask({
+        type: message.type,
+        title: '同步我的小红书主页',
+        tabId,
+        execute: () => syncXhsAccountFromTab(tabId),
       });
     case 'xhs:collect-blogger-notes':
       if (!USER_PROFILE_FEATURE_ENABLED) {
@@ -5488,6 +5501,22 @@ async function collectXhsBloggerFromTab(tabId) {
     importSession: null,
     task: historyItem,
   };
+}
+
+async function syncXhsAccountFromTab(tabId) {
+  const payload = await runExtraction(tabId, extractXhsBloggerPayload, { world: 'MAIN' });
+  if (!payload?.userId) throw new Error('当前页面未识别到可验证的小红书账号主页');
+  const result = await forwardToRedbook('account', payload, { method: 'creator-profile' });
+  const historyItem = await appendXhsTaskHistory({
+    id: `xhs-account-${hashString(`${payload?.source || ''}-${Date.now()}`)}`,
+    type: 'account-sync',
+    title: `同步账号：${normalizeText(payload?.nickname) || payload.userId}`,
+    status: 'completed',
+    count: 1,
+    summary: '已同步小红书主页并生成账号画像',
+    payload: { userId: payload.userId, accountName: payload.nickname || '', profileUrl: payload.profileUrl || payload.source || '' },
+  });
+  return { success: true, mode: 'xhs-account-sync', userId: payload.userId, account: result.profile || null, task: historyItem };
 }
 
 function parseXhsNoteUrl(urlInput) {

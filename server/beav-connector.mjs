@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { beavCreatorPayloadToCreatorInput, beavNotePayloadToSignalInput } from '../vendor/beav/plugin-xhs/redbook-payload-adapter.js';
+import { beavCreatorPayloadToAccountFacts, beavCreatorPayloadToCreatorInput, beavNotePayloadToSignalInput } from '../vendor/beav/plugin-xhs/redbook-payload-adapter.js';
 import { normalizeXiaohongshuCreator } from '../providers/xiaohongshu/normalize-creator.mjs';
 import { normalizeXiaohongshuSignal } from '../providers/xiaohongshu/normalize.mjs';
 import { APP_VERSION, BUILD_COMMIT } from './build-info.mjs';
@@ -138,11 +138,12 @@ async function defaultPost(apiBaseUrl, pathname, body) {
   return result;
 }
 
-export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators, host = BEAV_CONNECTOR_HOST, port = BEAV_CONNECTOR_PORT } = {}) {
+export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators, ingestAccount, host = BEAV_CONNECTOR_HOST, port = BEAV_CONNECTOR_PORT } = {}) {
   if (!apiBaseUrl && (!ingestSignals || !ingestCreators)) throw new TypeError('Beav connector 需要 apiBaseUrl 或注入 ingest handlers');
 
   const postSignals = ingestSignals || ((payload) => defaultPost(apiBaseUrl, '/api/signals/ingest', payload));
   const postCreators = ingestCreators || ((payload) => defaultPost(apiBaseUrl, '/api/creators/ingest', payload));
+  const postAccount = ingestAccount || ((payload) => defaultPost(apiBaseUrl, '/api/account/xhs-sync', payload));
 
   async function ingestNote(payload, options = {}) {
     const source = sourceFor(options.method || 'current-note', payload, options.taskId, options.capturedAt);
@@ -177,6 +178,22 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
     // discard Beav's stats fields on that second normalization pass.
     const result = await postCreators({ creators: [creatorInput] });
     return { success: true, kind: 'creator', userId: normalized.userId, ...result };
+  }
+
+  async function ingestAccountProfile(payload, options = {}) {
+    const source = sourceFor('creator-profile', payload, options.taskId, options.capturedAt);
+    const creatorInput = beavCreatorPayloadToCreatorInput(payload, source);
+    const result = await postAccount({
+      facts: beavCreatorPayloadToAccountFacts(payload, source),
+    });
+    return {
+      success: true,
+      kind: 'account',
+      userId: creatorInput.userId,
+      accountName: creatorInput.nickname,
+      profile: result.profile || null,
+      ...result,
+    };
   }
 
   async function ingestNotes(payloads, options = {}) {
@@ -248,7 +265,7 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
       if (request.method === 'GET' && url.pathname === '/health') return json(response, 200, await health(), origin);
       if (request.method !== 'POST') return reject(response, 405, 'connector method 不被允许', origin);
       if (textHeader(request, 'content-type').split(';', 1)[0].trim().toLowerCase() !== 'application/json') return reject(response, 415, 'connector 只接受 application/json', origin);
-      if (!['/v1/xhs/note', '/v1/xhs/creator', '/v1/xhs/notes'].includes(url.pathname)) return reject(response, 404, 'connector route 不存在', origin);
+      if (!['/v1/xhs/note', '/v1/xhs/creator', '/v1/xhs/notes', '/v1/xhs/account'].includes(url.pathname)) return reject(response, 404, 'connector route 不存在', origin);
       const body = await readJsonBody(request);
       if (url.pathname === '/v1/xhs/note') {
         const envelope = unwrapPayload(body);
@@ -257,6 +274,10 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
       if (url.pathname === '/v1/xhs/creator') {
         const envelope = unwrapPayload(body);
         return json(response, 200, await ingestCreator(envelope.payload, { ...envelope.options, method: safeMethod(envelope.options.method, 'creator-profile') }), origin);
+      }
+      if (url.pathname === '/v1/xhs/account') {
+        const envelope = unwrapPayload(body);
+        return json(response, 200, await ingestAccountProfile(envelope.payload, envelope.options), origin);
       }
       const notes = Array.isArray(body) ? body : body?.notes;
       const options = body && typeof body === 'object' ? body.__redbook || {} : {};
@@ -278,7 +299,7 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
     server.closeAllConnections?.();
     server.close((error) => error ? rejectPromise(error) : resolve());
   });
-  return { server, host, port, listen, close, ingestNote, ingestCreator, ingestNotes, health };
+  return { server, host, port, listen, close, ingestNote, ingestCreator, ingestAccountProfile, ingestNotes, health };
 }
 
 export async function startBeavConnector(options = {}) {

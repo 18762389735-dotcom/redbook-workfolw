@@ -54,6 +54,16 @@ export async function ingestCreator(payload, options = {}) {
   catch (error) { return { success: false, connected: false, error: error instanceof Error ? error.message : String(error) }; }
 }
 
+export async function syncAccountProfile(payload, options = {}) {
+  try {
+    return await request('/v1/xhs/account', {
+      payload,
+      __redbook: { ...redbookOptions({ ...options, method: options.method || 'creator-profile' }) },
+    });
+  }
+  catch (error) { return { success: false, connected: false, error: error instanceof Error ? error.message : String(error) }; }
+}
+
 export async function ingestNotes(payloads, options = {}) {
   try {
     return await request('/v1/xhs/notes', {

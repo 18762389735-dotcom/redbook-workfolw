@@ -12,3 +12,16 @@
 .account-save-bar { position: sticky; bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 18px; border: 1px solid #e6e6eb; border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 10px 30px rgba(28,31,39,.1); }
 .account-save-bar small { color: #7e838d; }
 .account-save-bar .button { min-height: 46px; }
+.account-empty-state { text-align: center; padding: 42px 24px; }
+.account-empty-state h2 { margin: 0 0 8px; }
+.account-empty-state p { margin: 0 auto 20px; max-width: 600px; color: #7e838d; }
+.account-facts-grid,.account-profile-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.account-fact { display: grid; gap: 5px; min-width: 0; padding: 14px; border: 1px solid #ececf0; border-radius: 12px; background: #fcfcfd; }
+.account-fact span { color: #8a8f99; font-size: 12px; }
+.account-fact strong { color: #292e37; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+.account-fact--wide { grid-column: 1/-1; }
+.account-muted { color: #8a8f99; }
+.account-heading-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.account-heading-actions > span { padding: 6px 10px; border-radius: 99px; background: #fff6e8; color: #b36c16; font-size: 12px; font-weight: 700; }
+@media (max-width: 860px) { .account-facts-grid,.account-profile-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 620px) { .account-facts-grid,.account-profile-summary,.account-form-grid { grid-template-columns: 1fr; } .account-fact--wide { grid-column: auto; } .account-form-heading { flex-direction: column; } }

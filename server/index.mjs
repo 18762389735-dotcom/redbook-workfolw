@@ -60,14 +60,14 @@ function createApi(runtimeRoot) {
   const signalsApi = createSignalsApiHandler(stores.signalStore);
   const creatorsApi = createCreatorsApiHandler(stores.creatorStore);
   const discoveryApi = createDiscoveryApiHandler(stores.signalStore, stores.creatorStore);
-  const accountApi = createAccountApiHandler(stores.accountStore);
+  const accountApi = createAccountApiHandler(stores.accountStore, { signalStore: stores.signalStore });
   const matchingApi = createMatchingApiHandler(stores);
   const opportunitiesApi = createOpportunitiesApiHandler(stores);
   const writingApi = createWritingApiHandler(stores);
   const publishingApi = createPublishingApiHandler(stores);
   const api = (request, response) => {
     const pathname = new URL(request.url, 'http://localhost').pathname;
-    if (pathname === '/api/account') return accountApi(request, response);
+    if (pathname === '/api/account' || pathname.startsWith('/api/account/')) return accountApi(request, response);
     if (pathname === '/api/matching' || pathname === '/api/decisions') return matchingApi(request, response);
     if (pathname === '/api/opportunities' || pathname.startsWith('/api/opportunities/')) return opportunitiesApi(request, response);
     if (pathname === '/api/writing' || pathname.startsWith('/api/writing/')) return writingApi(request, response);
