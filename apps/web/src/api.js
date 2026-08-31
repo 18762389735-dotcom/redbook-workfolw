@@ -7,7 +7,11 @@ export const updateAccount = (profile) => requestJson('/api/account', { method: 
 export const getMatching = () => requestJson('/api/matching');
 export const getDecisions = () => requestJson('/api/decisions');
 export const getOpportunities = () => requestJson('/api/opportunities');
+export const evaluateOpportunity = (signalId) => requestJson('/api/opportunities/evaluate', { method: 'POST', body: JSON.stringify({ signalId }) });
 export const actOnOpportunity = (id, action) => requestJson(`/api/opportunities/${encodeURIComponent(id)}/action`, { method: 'POST', body: JSON.stringify({ action }) });
 export const getWritingWorkspace = () => requestJson('/api/writing');
 export const createWritingDraft = (opportunityId) => requestJson('/api/writing/drafts', { method: 'POST', body: JSON.stringify({ opportunityId }) });
 export const updateWritingDraft = (id, draft) => requestJson(`/api/writing/drafts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(draft) });
+export const createPublishRecord = (record) => requestJson('/api/publish-records', { method: 'POST', body: JSON.stringify(record) });
+export const getReview = () => requestJson('/api/review');
+export const updatePublishRecord = (id, record) => requestJson(`/api/publish-records/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(record) });

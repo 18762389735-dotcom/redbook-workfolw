@@ -23,4 +23,6 @@
 .writing-mvp-field input, .writing-mvp-field textarea { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #dedfe5; border-radius: 10px; color: #30353f; font: inherit; line-height: 1.6; }
 .writing-mvp-field textarea { min-height: 330px; resize: vertical; }
 .writing-structure-preview { padding: 16px; border-radius: 13px; background: #f8f9fa; }
+.publish-record-form { display: grid; gap: 14px; padding: 18px; border: 1px solid #f0d6db; border-radius: 13px; background: #fff8f8; }
+.publish-record-form > strong { color: #4d535e; font-size: 15px; }
 @media (max-width: 900px) { .writing-brief-grid, .writing-evidence-list { grid-template-columns: 1fr; } .writing-brief-block--wide { grid-column: auto; } }

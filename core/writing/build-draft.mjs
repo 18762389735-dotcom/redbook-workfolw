@@ -76,6 +76,9 @@ export function buildWritingBrief({ opportunity, signals = [], accountProfile = 
     structure: structureFor(topic),
     constraints,
     decisionStatus: opportunity.decisionStatus || null,
+    confidence: opportunity.confidence || opportunity.matchingConfidence || 'unknown',
+    evidenceCompleteness: opportunity.evidenceCompleteness || null,
+    missingEvidence: [...list(opportunity.missingEvidence)],
     matchingConfidence: opportunity.matchingConfidence || null,
   };
 }

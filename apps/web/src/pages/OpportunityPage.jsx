@@ -4,9 +4,9 @@ import { PageHeader } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
 import './opportunities.css';
 
-const filters = [['all', '全部'], ['QUALIFIED', '可行动'], ['WATCH', '观察'], ['HOLD', '暂缓'], ['saved', '已保存'], ['dismissed', '已忽略']];
-const tone = (status) => status === 'QUALIFIED' ? 'green' : status === 'WATCH' ? 'blue' : status === 'HOLD' ? 'orange' : 'neutral';
-const labels = { QUALIFIED: '可行动', WATCH: '继续观察', HOLD: '暂缓', INSUFFICIENT_EVIDENCE: '证据不足' };
+const filters = [['all', '全部'], ['QUALIFIED', '可行动'], ['CONSIDER', '考虑'], ['OBSERVE', '观察'], ['WATCH', '观察'], ['HOLD', '暂缓'], ['saved', '已保存'], ['dismissed', '已忽略']];
+const tone = (status) => status === 'QUALIFIED' ? 'green' : ['WATCH', 'CONSIDER'].includes(status) ? 'blue' : ['HOLD', 'OBSERVE'].includes(status) ? 'orange' : 'neutral';
+const labels = { QUALIFIED: '可行动', CONSIDER: '可以考虑', OBSERVE: '先观察', WATCH: '继续观察', HOLD: '暂缓', INSUFFICIENT_EVIDENCE: '证据不足' };
 
 export function OpportunityPage({ onNavigate }) {
   const [items, setItems] = useState([]); const [filter, setFilter] = useState('all'); const [state, setState] = useState('loading'); const [busy, setBusy] = useState('');
@@ -23,7 +23,7 @@ export function OpportunityPage({ onNavigate }) {
     <div className="hot-filter-tabs opportunity-filters">{filters.map(([key, label]) => <button key={key} className={filter === key ? 'hot-filter-tab hot-filter-tab--active' : 'hot-filter-tab'} onClick={() => setFilter(key)}>{label}</button>)}</div>
     {state === 'loading' && <div className="async-state async-state--loading"><div><strong>正在同步计算机会</strong><p>没有 Agent Job，也不会修改平台证据。</p></div></div>}
     {state === 'error' && <div className="hot-empty-state"><strong>机会读取失败</strong><button className="button button--secondary" onClick={load}>重试</button></div>}
-    {state === 'ready' && !visible.length && <div className="hot-empty-state"><strong>当前筛选下暂无机会</strong><p>真实 Discovery 没有 Cluster 时不会生成演示机会。</p></div>}
+    {state === 'ready' && !visible.length && <div className="hot-empty-state"><strong>当前筛选下暂无机会</strong><p>可先在素材页对任意真实 Signal 评估机会，不需要等待完整聚类证据。</p></div>}
     {state === 'ready' && <div className="opportunity-grid">{visible.map((item) => <OpportunityCard key={item.id} item={item} busy={busy} onAction={act} onEvidence={() => onNavigate('discover')} />)}</div>}
   </>;
 }
@@ -34,7 +34,7 @@ function OpportunityCard({ item, busy, onAction, onEvidence }) {
   return <article className={selected ? 'opportunity-card opportunity-card--selected' : 'opportunity-card'}>
     <header><div className="opportunity-tags"><StatusTag tone={tone(item.decisionStatus)}>{labels[item.decisionStatus] || item.decisionStatus}</StatusTag><StatusTag tone="neutral">{item.userState}</StatusTag>{item.manualOverride && <StatusTag tone="orange">人工越过建议</StatusTag>}</div><h2>{item.title}</h2></header>
     <div className="opportunity-columns"><ListBlock title="为什么现在值得看" values={item.whyNow} /><ListBlock title="为什么和账号相关" values={item.whyFit} /></div>
-    <dl className="opportunity-metrics"><div><dt>独立作者</dt><dd>{item.platform.independentAuthors}</dd></div><div><dt>当前 / 参考</dt><dd>{item.platform.currentSamples} / {item.platform.referenceSamples}</dd></div><div><dt>Outlier</dt><dd>{item.platform.outlierCount}</dd></div><div><dt>平台置信度</dt><dd>{item.platform.confidence}</dd></div><div><dt>Account fit</dt><dd>{item.accountFit.status}</dd></div><div><dt>Current relevance</dt><dd>{item.currentRelevance.status}</dd></div><div><dt>Matching</dt><dd>{item.matchingConfidence}</dd></div></dl>
+    <dl className="opportunity-metrics"><div><dt>独立作者</dt><dd>{item.platform.independentAuthors}</dd></div><div><dt>当前 / 参考</dt><dd>{item.platform.currentSamples} / {item.platform.referenceSamples}</dd></div><div><dt>Outlier</dt><dd>{item.platform.outlierCount}</dd></div><div><dt>平台置信度</dt><dd>{item.platform.confidence}</dd></div><div><dt>证据完整度</dt><dd>{item.evidenceCompleteness || item.confidence || '未知'}</dd></div><div><dt>Account fit</dt><dd>{item.accountFit.status}</dd></div><div><dt>Matching</dt><dd>{item.matchingConfidence}</dd></div></dl>
     <ListBlock title="具体阻断因素" values={item.blockingFactors} kind="opportunity-warning" /><ListBlock title="缺失证据" values={item.missingEvidence} kind="opportunity-warning" /><ListBlock title="内容限制" values={item.privacyConstraints} kind="opportunity-limit" />
     <details className="opportunity-evidence"><summary>查看平台证据（{item.evidenceSignalIds.length}）</summary>{item.evidenceSignals.length ? <ul>{item.evidenceSignals.map((signal) => <li key={signal.id}>{signal.title}<small>{signal.id}</small></li>)}</ul> : <p>{item.evidenceSignalIds.join('、')}</p>}<button className="card-action" onClick={onEvidence}>前往发现页</button></details>
     <p className="opportunity-next"><strong>下一步：</strong>{item.nextStep}</p>
