@@ -47,7 +47,7 @@
 | `xhs:collect-keyword` | `collectXhsKeyword` | Deferred |
 | `xhs:control-active-task` | `controlXhsActiveTask` | No direct mapping: different persistent task contract |
 
-## Exact incompatibility
+## Historical exact incompatibility (before Batch 04.1.2B)
 
 The donor's XHS vertical slice is not currently packaged as independently importable collector modules:
 
@@ -58,7 +58,22 @@ The donor's XHS vertical slice is not currently packaged as independently import
 
 Copying `background.js` whole would violate the explicit scope prohibition on Native Host, Knowledge workspace, account import, unrelated platforms and the MV3 service-worker route. Replacing its internals with new Redbook logic would violate the donor-first and byte-preservation requirements.
 
-Therefore no donor file was copied into `vendor/beav/plugin-xhs/`, and no `SOURCE_MANIFEST.json` is created: claiming a byte-identical runtime transplant would be inaccurate.
+This was the reason the initial audit stopped before implementation. Batch 04.1.2B then authorized a narrow extraction and a typed Electron adapter; the historical finding remains true for the excluded background/Knowledge/task-queue paths.
+
+## Batch 04.1.2B implementation
+
+The approved vertical slice now keeps donor page files byte-identical under `vendor/beav/plugin-xhs/`, with integrity recorded in `SOURCE_MANIFEST.json`. The full donor background remains a non-runtime reference snapshot. Only these donor functions are executed in Electron:
+
+| Redbook action | Donor function | Redbook boundary |
+| --- | --- | --- |
+| page detail/card `save-xhs` | `extractXhsNotePayload` | `redbook-payload-adapter.js` → `normalizeXiaohongshuSignal` → `/api/signals/ingest` |
+| typed creator action | `extractXhsBloggerPayload` | `redbook-payload-adapter.js` → `normalizeXiaohongshuCreator` → `/api/creators/ingest` |
+
+`desktop/xhs-preload.cjs` injects, in donor order, bridge → route bridge → page observer. `desktop/beav-extension-adapter.cjs` exposes only the two collector messages plus the page-state/safety responses needed by the unchanged observer. Main validates the sender as an owned XHS window before dispatching either action.
+
+The donor observer currently sets `ACCOUNT_BINDING_FEATURE_ENABLED = false`, so its unchanged profile control intentionally does not render the current-blogger action; the typed creator path is available to the Electron adapter and the existing Workbench fallback. Enabling a new overlay/profile detector would violate donor-first scope and is explicitly deferred. Homepage baseline, keyword batch, comments, downloads and the donor queue remain deferred.
+
+The page observer is a page-resident transplant, not a claim that all of Beav's background runtime was copied. `reference/background.js` is excluded from packaged files, while the extracted functions and thin adapters are packaged.
 
 ## Safety boundary retained
 
