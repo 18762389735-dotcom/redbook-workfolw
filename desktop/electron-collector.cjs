@@ -1,9 +1,24 @@
 const { join } = require('node:path');
 const { isUsableWindow, safeWindowUrl, safeDestroyWindow } = require('./xhs-session.cjs');
-const { executePageFunction } = require('./page-execution.cjs');
+const { executePageFunction, sanitizeDiagnosticText } = require('./page-execution.cjs');
 
 const now = () => new Date().toISOString();
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const safeEvidenceValue = (value) => sanitizeDiagnosticText(value == null || value === '' ? 'none' : value).replace(/[\r\n]+/g, ' ').slice(0, 120);
+const profileEvidenceSummary = (evidence) => {
+  const firstLink = evidence?.observedProfileLinks?.[0];
+  return [
+    `pathname=${safeEvidenceValue(String(evidence?.pathname || '/').split(/[?#]/)[0])}`,
+    `profilePathId=${safeEvidenceValue(evidence?.profilePathId)}`,
+    `stateBranch=${safeEvidenceValue(evidence?.stateIdentity?.branch)}`,
+    `stateUserId=${safeEvidenceValue(evidence?.stateIdentity?.userId)}`,
+    `publicHandle=${safeEvidenceValue(evidence?.publicHandle)}`,
+    `profileLinks=${Number(evidence?.observedProfileLinks?.length) || 0}`,
+    `profileLinkId=${safeEvidenceValue(firstLink?.profileId)}`,
+    `profileMetrics=${evidence?.evidence?.hasProfileMetrics === true ? 'present' : 'absent'}`,
+  ].join(', ');
+};
+const isProfileRecognitionFailure = (error) => error?.stage === 'page-function' && /当前页面未识别到可验证的博主公开资料/.test(error.message || '');
 
 class ElectronCollector {
   constructor({ xhsSession, serverUrl, runtimeRoot, onTaskChanged } = {}) {
@@ -82,7 +97,19 @@ class ElectronCollector {
     const task = await this.createTask('creator-profile', 1);
     try {
       await this.updateTask(task.id, { status: 'running', startedAt: now() });
-      const raw = await this.page(window, extractors.extractXhsBloggerPayload, [], 'creator-profile');
+      let raw;
+      try {
+        raw = await this.page(window, extractors.extractXhsBloggerPayload, [], 'creator-profile');
+      } catch (error) {
+        if (!isProfileRecognitionFailure(error)) throw error;
+        let evidence;
+        try {
+          evidence = await this.page(window, extractors.inspectXhsPublicProfileEvidence, [], 'creator-evidence');
+        } catch { throw error; }
+        const diagnostic = new Error(`${error.message}\nProfile evidence: ${profileEvidenceSummary(evidence)}`);
+        diagnostic.stage = error.stage;
+        throw diagnostic;
+      }
       const source = { provider: 'beav-derived-electron-session', method: 'creator-profile', taskId: task.id, capturedAt: now() };
       const normalized = creator.normalizeXiaohongshuCreator(payload.buildCreatorSignalPayload(raw, { profileUrl, taskId: task.id, capturedAt: source.capturedAt }), source);
       const result = await this.post('/api/creators/ingest', { creators: [normalized] });

@@ -77,6 +77,82 @@ export async function extractObservedNoteFeed(noteIdInput, timeoutInput = 6000) 
   return null;
 }
 
+// This probe is deliberately separate from Creator recognition. It only
+// returns a small, public evidence summary for diagnosing a real profile page
+// that the canonical identity extractor cannot yet verify.
+export function inspectXhsPublicProfileEvidence() {
+  const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const unwrap = (value) => value?._rawValue && typeof value._rawValue === 'object' ? value._rawValue : value?.value && typeof value.value === 'object' ? value.value : value;
+  const readState = () => {
+    if (window.__INITIAL_STATE__ && typeof window.__INITIAL_STATE__ === 'object') return window.__INITIAL_STATE__;
+    for (const script of document.scripts) {
+      const text = script.textContent || '';
+      if (!text.includes('window.__INITIAL_STATE__=')) continue;
+      try { return JSON.parse(text.replace('window.__INITIAL_STATE__=', '').replace(/undefined/g, 'null').replace(/;$/, '')); } catch { return null; }
+    }
+    return null;
+  };
+  const pathname = String(location.pathname || '').split(/[?#]/)[0] || '/';
+  const profilePathId = pathname.match(/^\/user\/profile\/([^/?#]+)/i)?.[1] || null;
+  const observedProfileLinks = [];
+  const seenProfileIds = new Set();
+  for (const anchor of document.querySelectorAll('a[href]')) {
+    let observed;
+    try { observed = new URL(anchor.getAttribute('href') || '', location.origin); } catch { continue; }
+    if (!/(^|\.)(xiaohongshu\.com|rednote\.com)$/i.test(observed.hostname)) continue;
+    const match = observed.pathname.match(/^\/user\/profile\/([^/?#]+)/i);
+    if (!match?.[1] || seenProfileIds.has(match[1])) continue;
+    seenProfileIds.add(match[1]);
+    observedProfileLinks.push({ pathname: observed.pathname, profileId: match[1] });
+    if (observedProfileLinks.length >= 10) break;
+  }
+
+  const state = readState();
+  const stateBranches = [
+    ['user.userPageData', state?.user?.userPageData],
+    ['user.profile', state?.user?.profile],
+    ['user.userInfo', state?.user?.userInfo],
+  ];
+  let stateIdentity = { branch: null, userId: null };
+  for (const [branch, candidate] of stateBranches) {
+    const raw = unwrap(candidate);
+    if (!raw || typeof raw !== 'object') continue;
+    const basic = raw.basic_info || raw.basicInfo || raw;
+    const userId = normalizeText(raw.userId || raw.user_id || raw.id || basic.userId || basic.user_id) || null;
+    stateIdentity = { branch, userId };
+    if (userId) break;
+  }
+
+  const root = document.querySelector('.user-page, .user-info, [class*="user-info"], [class*="profile"]') || document.body;
+  const publicText = normalizeText(root?.innerText || root?.textContent);
+  const handle = publicText.match(/小红书号\s*[:：]?\s*([^\s]+)/)?.[1] || '';
+  const publicHandle = handle && handle.length <= 80 ? handle : null;
+  const followingText = publicText.match(/([0-9.,万亿]+)\s*关注/)?.[0] || null;
+  const followersText = publicText.match(/([0-9.,万亿]+)\s*粉丝/)?.[0] || null;
+  const likesAndCollectsText = publicText.match(/([0-9.,万亿]+)\s*(?:获赞与收藏|获赞)/)?.[0] || null;
+  const stateNickname = stateBranches
+    .map(([, candidate]) => unwrap(candidate))
+    .find((candidate) => candidate && typeof candidate === 'object');
+  const basic = stateNickname?.basic_info || stateNickname?.basicInfo || stateNickname || {};
+  const titleNickname = normalizeText(document.title || '').match(/^(.+?)\s*[-｜|]\s*小红书/i)?.[1] || null;
+  const nickname = normalizeText(stateNickname?.nickname || stateNickname?.nickName || basic.nickname || basic.nickName) || titleNickname;
+
+  return {
+    pathname,
+    profilePathId,
+    observedProfileLinks,
+    stateIdentity,
+    publicHandle,
+    visibleProfileFacts: { nickname: nickname || null, followingText, followersText, likesAndCollectsText },
+    evidence: {
+      hasPublicHandle: Boolean(publicHandle),
+      hasProfileMetrics: Boolean(followingText && followersText && likesAndCollectsText),
+      hasObservedProfileLink: observedProfileLinks.length > 0,
+      hasStateUserId: Boolean(stateIdentity.userId),
+    },
+  };
+}
+
 export function extractXhsBloggerPayload() {
   const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
   const parseCountText = (value) => {
