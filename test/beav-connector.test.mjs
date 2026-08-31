@@ -11,6 +11,7 @@ import { CreatorStore } from '../core/creators/creator-store.mjs';
 import { readFile } from 'node:fs/promises';
 import { startServer } from '../server/index.mjs';
 import { fileURLToPath } from 'node:url';
+import { APP_VERSION, BUILD_COMMIT } from '../server/build-info.mjs';
 
 const cleanups = [];
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())));
@@ -51,7 +52,13 @@ test('connector health is loopback-only and returns the stable contract', async 
   const { url } = await startTestConnector();
   const response = await fetch(`${url}/health`, { headers: headers('chrome-extension://abcdefghijklmnop') });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true, service: 'redbook-beav-connector', version: 1 });
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    service: 'redbook-beav-connector',
+    version: 1,
+    appVersion: APP_VERSION,
+    buildCommit: BUILD_COMMIT,
+  });
   assert.equal(response.headers.get('access-control-allow-origin'), 'chrome-extension://abcdefghijklmnop');
 });
 
@@ -59,7 +66,9 @@ test('connector ingests donor note and creator payloads through Redbook adapters
   const { url, signalStore, creatorStore } = await startTestConnector();
   const noteResponse = await fetch(`${url}/v1/xhs/note`, { method: 'POST', headers: { ...headers(), 'content-type': 'application/json' }, body: JSON.stringify({ payload: notePayload, __redbook: { method: 'current-note', taskId: 'native-task-1', capturedAt: '2026-08-31T03:00:00.000Z' } }) });
   assert.equal(noteResponse.status, 200);
-  assert.equal((await noteResponse.json()).created, 1);
+  const noteResult = await noteResponse.json();
+  assert.equal(noteResult.created, 1);
+  assert.equal(noteResult.authorId, 'creator-1');
   const signal = (await signalStore.list())[0];
   assert.equal(signal.noteId, 'note-connector-1');
   assert.equal(signal.metrics.likes, 12000);

@@ -206,6 +206,39 @@ function pluginError(scope, details) {
   console.error(`[redbox-plugin][${scope}]`, details);
 }
 
+// Temporary, deliberately narrow runtime evidence for the real creator-baseline
+// path. This records only task/owner/count scalars and a few normalized IDs;
+// never include page payloads, URLs, cookies, or tokens in this diagnostic.
+function logCreatorBaselineBatchContext(options, creatorUserId, notesLength) {
+  pluginLog('creator-baseline-batch-context', {
+    taskId: normalizeText(options?.taskId || xhsActiveTask?.id) || null,
+    method: 'creator-baseline',
+    creatorUserId: normalizeText(creatorUserId) || null,
+    notesLength: Number(notesLength || 0),
+  });
+}
+
+function logCreatorBaselineNormalized(options, creatorUserId, records) {
+  const safeRecords = Array.isArray(records) ? records.filter((record) => record?.noteId) : [];
+  const distinctRecords = new Map();
+  for (const record of safeRecords) {
+    if (!distinctRecords.has(record.noteId)) distinctRecords.set(record.noteId, record);
+  }
+  const distinctNoteIds = Array.from(distinctRecords.keys());
+  const safeCreatorUserId = normalizeText(creatorUserId) || null;
+  const linkedCount = safeCreatorUserId
+    ? Array.from(distinctRecords.values()).filter((record) => record.authorId === safeCreatorUserId).length
+    : 0;
+  pluginLog('creator-baseline-normalized', {
+    taskId: normalizeText(options?.taskId || xhsActiveTask?.id) || null,
+    method: 'creator-baseline',
+    creatorUserId: safeCreatorUserId,
+    distinctNoteIds: distinctNoteIds.length,
+    creatorLinked: `${linkedCount}/${distinctNoteIds.length}`,
+    samples: Array.from(distinctRecords.values()).slice(0, 5).map((record) => ({ noteId: record.noteId, authorId: record.authorId || null })),
+  });
+}
+
 function isPluginCaptureMessageType(type) {
   return PLUGIN_CAPTURE_MESSAGE_TYPES.has(String(type || ''));
 }
@@ -6000,6 +6033,7 @@ async function collectXhsBloggerNotesViaApi(tabId, payload, options = {}) {
   }
   const skippedNotes = plan.skippedNotes;
   const pendingNotes = plan.pendingNotes;
+  logCreatorBaselineBatchContext(options, payloadState?.userId, pendingNotes.length);
   if (pendingNotes.length === 0 && skippedNotes.length === 0) {
     throw new Error('当前博主页未识别到可用于 API 采集的笔记链接');
   }
@@ -6024,6 +6058,7 @@ async function collectXhsBloggerNotesViaApi(tabId, payload, options = {}) {
   });
 
   const results = [];
+  const normalizedBatchRecords = [];
   const failures = [];
   const accountPosts = [];
   await syncXhsTaskStep({
@@ -6133,6 +6168,10 @@ async function collectXhsBloggerNotesViaApi(tabId, payload, options = {}) {
         entryId: redbookResult.noteId || entryPayload.noteId,
         duplicate: Number(redbookResult.duplicates || 0) > 0,
       };
+      normalizedBatchRecords.push({
+        noteId: entryPayload.noteId,
+        authorId: normalizeText(redbookResult.authorId),
+      });
       results.push({
         url: note.urlInfo.href,
         title: normalizeText(entryPayload.title) || note.urlInfo.href,
@@ -6215,6 +6254,7 @@ async function collectXhsBloggerNotesViaApi(tabId, payload, options = {}) {
     failures: failures.slice(0, 5),
     interval: describeBloggerCollectOptions(options),
   });
+  logCreatorBaselineNormalized(options, payloadState?.userId, normalizedBatchRecords);
   const accountBatch = await postAccountPostsBatch(options.accountSession, accountPosts).catch((error) => {
     pluginWarn('xhs-account-posts-batch-failed', {
       error: describeError(error),
@@ -6310,9 +6350,13 @@ async function collectXhsNoteLinks(urlsInput, options = {}) {
   const shouldSave = options?.saveToRedBox !== false;
   const interval = normalizeXhsCollectInterval(options?.interval || intervalOptionsFromSettings(settings));
   const results = [];
+  const normalizedBatchRecords = [];
   const failures = [];
 
   const targetUrls = urls.slice(0, limit);
+  if (normalizeText(options?.taskType) === 'blogger-notes') {
+    logCreatorBaselineBatchContext(options, options?.creatorUserId, targetUrls.length);
+  }
   pluginLog('xhs-note-links-start', {
     totalUrls: urls.length,
     targetUrls: targetUrls.length,
@@ -6390,6 +6434,12 @@ async function collectXhsNoteLinks(urlsInput, options = {}) {
         entryId: redbookResult.noteId || payload?.noteId,
         duplicate: Number(redbookResult.duplicates || 0) > 0,
       };
+      if (normalizeText(options?.taskType) === 'blogger-notes') {
+        normalizedBatchRecords.push({
+          noteId: payload?.noteId || '',
+          authorId: normalizeText(redbookResult.authorId),
+        });
+      }
       results.push({
         url,
         title: normalizeText(payload?.title) || url,
@@ -6465,6 +6515,9 @@ async function collectXhsNoteLinks(urlsInput, options = {}) {
     failures: failures.slice(0, 5),
     mode: normalizeText(options?.mode) || 'tab',
   });
+  if (normalizeText(options?.taskType) === 'blogger-notes') {
+    logCreatorBaselineNormalized(options, options?.creatorUserId, normalizedBatchRecords);
+  }
 
   return {
     success: true,

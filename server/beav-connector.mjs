@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { beavCreatorPayloadToCreatorInput, beavNotePayloadToSignalInput } from '../vendor/beav/plugin-xhs/redbook-payload-adapter.js';
 import { normalizeXiaohongshuCreator } from '../providers/xiaohongshu/normalize-creator.mjs';
 import { normalizeXiaohongshuSignal } from '../providers/xiaohongshu/normalize.mjs';
+import { APP_VERSION, BUILD_COMMIT } from './build-info.mjs';
 
 export const BEAV_CONNECTOR_HOST = '127.0.0.1';
 export const BEAV_CONNECTOR_PORT = 43127;
@@ -155,7 +156,15 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
     // adapter-shaped input here so its explicit metrics and source metadata
     // survive that boundary unchanged.
     const result = await postSignals({ signals: [signalInput] });
-    return { success: true, kind: 'signal', noteId: normalized.noteId, ...result };
+    return {
+      success: true,
+      kind: 'signal',
+      noteId: normalized.noteId,
+      // Safe diagnostic scalar used by the creator-baseline runtime audit.
+      // Never expose the raw payload or any session credential here.
+      authorId: normalized.author?.id || null,
+      ...result,
+    };
   }
 
   async function ingestCreator(payload, options = {}) {
@@ -175,6 +184,14 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
     if (!Array.isArray(notes)) throw new TypeError('notes connector payload 必须包含 notes 数组');
     const taskId = options.taskId || randomUUID();
     const capturedAt = options.capturedAt || new Date().toISOString();
+    if (options.method === 'creator-baseline') {
+      console.info('[redbook-diagnostic] creator-baseline batch context', {
+        taskId: String(taskId || ''),
+        method: 'creator-baseline',
+        creatorUserId: safeCreatorUserId(options.creatorUserId),
+        notesLength: notes.length,
+      });
+    }
     const signals = [];
     const errors = [];
     for (let index = 0; index < notes.length; index += 1) {
@@ -191,11 +208,36 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
       }
     }
     const result = signals.length ? await postSignals({ signals }) : { received: 0, created: 0, updated: 0, duplicates: 0 };
+    if (options.method === 'creator-baseline') {
+      const distinctSignals = new Map();
+      for (const signal of signals) {
+        if (signal.noteId && !distinctSignals.has(signal.noteId)) distinctSignals.set(signal.noteId, signal);
+      }
+      const distinctNoteIds = Array.from(distinctSignals.keys());
+      const creatorUserId = safeCreatorUserId(options.creatorUserId);
+      const linkedCount = creatorUserId
+        ? Array.from(distinctSignals.values()).filter((signal) => signal.author?.id === creatorUserId).length
+        : 0;
+      console.info('[redbook-diagnostic] creator-baseline normalized', {
+        taskId: String(taskId || ''),
+        method: 'creator-baseline',
+        creatorUserId,
+        distinctNoteIds: distinctNoteIds.length,
+        creatorLinked: `${linkedCount}/${distinctNoteIds.length}`,
+        samples: Array.from(distinctSignals.values()).slice(0, 5).map((signal) => ({ noteId: signal.noteId, authorId: signal.author?.id || null })),
+      });
+    }
     return { success: true, kind: 'signals', requested: notes.length, errors, ...result };
   }
 
   async function health() {
-    return { ok: true, service: 'redbook-beav-connector', version: 1 };
+    return {
+      ok: true,
+      service: 'redbook-beav-connector',
+      version: 1,
+      appVersion: APP_VERSION,
+      buildCommit: BUILD_COMMIT,
+    };
   }
 
   const server = createServer(async (request, response) => {

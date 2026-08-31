@@ -1,4 +1,5 @@
 const serverStatusEl = document.getElementById('server-status');
+const buildIdentityEl = document.getElementById('build-identity');
 const pageMetaEl = document.getElementById('page-meta');
 const resultEl = document.getElementById('result');
 const actionHintEl = document.getElementById('action-hint');
@@ -32,6 +33,7 @@ let desktopConnection = {
   state: 'checking',
   ingestAllowed: false,
   context: null,
+  buildCommit: null,
 };
 
 init().catch((error) => {
@@ -386,12 +388,13 @@ async function refreshConnectionStatus(forceRefresh = false) {
 }
 
 function normalizeDesktopConnection(health) {
+  const buildCommit = normalizeText(health?.redbookConnector?.buildCommit || health?.buildCommit);
   if (health?.success) {
     const context = health.context && typeof health.context === 'object' ? health.context : null;
     if (context?.supported !== false && context?.ingest?.allowed !== true) {
-      return { state: 'initializing', ingestAllowed: false, context };
+      return { state: 'initializing', ingestAllowed: false, context, buildCommit };
     }
-    return { state: 'ready', ingestAllowed: true, context };
+    return { state: 'ready', ingestAllowed: true, context, buildCommit };
   }
 
   const code = normalizeText(health?.code).toUpperCase();
@@ -404,15 +407,18 @@ function normalizeDesktopConnection(health) {
     || availability === 'app_shutting_down'
     || phase === 'bridge_reconnect'
   ) {
-    return { state: 'recovering', ingestAllowed: false, context: null };
+    return { state: 'recovering', ingestAllowed: false, context: null, buildCommit };
   }
   if (/UPGRADE|PROTOCOL_MISMATCH|AUTHENTICATION_FAILED|VERSION_STALE/.test(code)) {
-    return { state: 'attention', ingestAllowed: false, context: null };
+    return { state: 'attention', ingestAllowed: false, context: null, buildCommit };
   }
-  return { state: 'offline', ingestAllowed: false, context: null };
+  return { state: 'offline', ingestAllowed: false, context: null, buildCommit };
 }
 
 function renderDesktopConnection() {
+  const buildCommit = normalizeText(desktopConnection.buildCommit);
+  buildIdentityEl?.classList.toggle('hidden', !buildCommit);
+  if (buildIdentityEl) buildIdentityEl.textContent = buildCommit ? `Connected Workbench: buildCommit = ${buildCommit}` : '';
   const spaceName = normalizeText(desktopConnection.context?.space?.name);
   if (desktopConnection.state === 'ready') {
     serverStatusEl.textContent = desktopConnection.context?.supported === false

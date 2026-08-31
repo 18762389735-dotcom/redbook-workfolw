@@ -7,7 +7,7 @@
   "main": "desktop/main.cjs",
   "type": "module",
   "engines": { "node": ">=20" },
-  "scripts": { "dev": "node server/index.mjs", "build": "vite build --config apps/web/vite.config.mjs", "start": "node server/index.mjs --production", "desktop": "electron .", "desktop:smoke": "node desktop/smoke.mjs", "desktop:collector-smoke": "node desktop/collector-smoke.mjs", "desktop:lifecycle-smoke": "node desktop/lifecycle-smoke.mjs", "desktop:packaged-smoke": "node desktop/packaged-smoke.mjs", "desktop:collector-spike": "electron desktop/collector-spike.cjs", "package:win": "npm run build && electron-builder --win nsis --x64 --publish never", "test": "node scripts/run-tests.mjs" },
+  "scripts": { "dev": "node server/index.mjs", "build": "vite build --config apps/web/vite.config.mjs", "start": "node server/index.mjs --production", "desktop": "electron .", "desktop:smoke": "node desktop/smoke.mjs", "desktop:collector-smoke": "node desktop/collector-smoke.mjs", "desktop:lifecycle-smoke": "node desktop/lifecycle-smoke.mjs", "desktop:packaged-smoke": "node desktop/packaged-smoke.mjs", "desktop:collector-spike": "electron desktop/collector-spike.cjs", "package:win": "node scripts/write-build-info.mjs && npm run build && electron-builder --win nsis --x64 --publish never", "test": "node scripts/run-tests.mjs" },
   "dependencies": { "@vitejs/plugin-react": "5.0.4", "react": "19.2.0", "react-dom": "19.2.0", "vite": "6.4.2" },
   "devDependencies": { "electron": "44.0.0", "electron-builder": "26.15.3" },
   "build": {

@@ -6,4 +6,5 @@ data/account.json
 data/opportunities.json
 data/*.tmp
 release/
+server/build-info.json
 .DS_Store
