@@ -4,6 +4,10 @@ data/signals.json
 data/creators.json
 data/account.json
 data/opportunities.json
+data/drafts.json
+data/publish-records.json
+data/collector-tasks.json
+data/opportunity-evaluations.json
 data/*.tmp
 release/
 server/build-info.json
