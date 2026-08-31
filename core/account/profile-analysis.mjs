@@ -6,7 +6,7 @@ const STOP_WORDS = new Set(['小红书', '分享', '我的', '一个', '可以',
 
 function termsFrom(value) {
   return text(value)
-    .split(/[\s,，。！？；：:、|/\\()[\]【】<>《》“”‘’#]+/)
+    .split(/[\s,，。！？；：:、|｜→/\\()[\]【】<>《》“”‘’#]+/)
     .map((term) => term.trim())
     .filter((term) => term.length >= 2 && term.length <= 20 && !STOP_WORDS.has(term));
 }
@@ -51,24 +51,57 @@ function highPerformingThemes(notes, themes) {
 export function buildAccountProfileAnalysis({ facts = {}, notes = [], now = new Date().toISOString() } = {}) {
   const recentContent = normalizeRecentContent(notes, now);
   const usableNotes = recentContent.notes.filter((note) => note.noteId || note.title || note.bodyText);
-  const themes = topTerms(usableNotes);
-  const formats = formatsFor(usableNotes);
+  const factEvidence = [facts.bio, facts.school, ...(Array.isArray(facts.publicTags) ? facts.publicTags : [])]
+    .map(text)
+    .filter(Boolean)
+    .join(' ');
+  const factNotes = factEvidence ? [{ title: '', bodyText: factEvidence }] : [];
+  // A profile without saved notes still has a small, honest evidence surface:
+  // the public bio/tags. Keep it separate from note performance analysis.
+  const inferenceNotes = usableNotes.length ? usableNotes : factNotes;
+  const themes = topTerms(inferenceNotes);
+  const formats = formatsFor(inferenceNotes);
   const highPerforming = highPerformingThemes(usableNotes, themes);
-  const subject = themes.length ? themes.slice(0, 3).join('、') : '已保存的小红书内容';
+  const hasOwnNotes = usableNotes.length > 0;
+  const hasPublicFacts = factNotes.length > 0;
+  const subject = themes.length
+    ? themes.slice(0, 3).join('、')
+    : hasOwnNotes
+      ? '已保存的小红书内容'
+      : '主页公开资料';
+  const contentPillars = themes.slice(0, 3).length
+    ? themes.slice(0, 3)
+    : hasPublicFacts
+      ? ['主页公开资料']
+      : [];
   const inferred = {
-    positioning: usableNotes.length ? `围绕${subject}分享真实经验与方法` : '',
-    niche: themes.slice(0, 3).join('、'),
-    targetAudience: themes.length ? `关注${subject}的读者` : '',
-    contentPillars: themes.slice(0, 3),
-    accountPromise: usableNotes.length ? [`用真实经验分享${subject}相关的方法与观察`] : [],
+    positioning: hasOwnNotes
+      ? `围绕${subject}分享真实经验与方法`
+      : hasPublicFacts
+        ? `围绕${subject}分享个人经验与观察`
+        : '',
+    niche: themes.slice(0, 3).join('、') || (hasPublicFacts ? '主页公开资料' : ''),
+    targetAudience: (themes.length || hasPublicFacts) ? `关注${subject}的读者` : '',
+    contentPillars,
+    accountPromise: hasOwnNotes
+      ? [`用真实经验分享${subject}相关的方法与观察`]
+      : hasPublicFacts
+        ? [`基于主页公开资料分享${subject}相关的经验与观察`]
+        : [],
     strengths: [
       ...(usableNotes.length >= 3 ? ['已有持续的真实内容记录'] : []),
       ...(themes.length ? [`内容主题集中在${themes.slice(0, 3).join('、')}`] : []),
       ...(formats.length ? [`已出现${formats.join('、')}内容形式`] : []),
+      ...(!hasOwnNotes && hasPublicFacts ? ['主页简介与公开标签提供了初始定位线索'] : []),
     ],
-    weaknesses: usableNotes.length < 5 ? ['可用于分析的近期笔记较少，画像置信度有限'] : [],
+    weaknesses: !hasOwnNotes
+      ? ['尚无已保存的本人笔记，内容表现与主题稳定性暂不可验证']
+      : usableNotes.length < 5
+        ? ['可用于分析的近期笔记较少，画像置信度有限']
+        : [],
     contentBoundaries: [],
     profileConfidence: usableNotes.length >= 5 ? 'medium' : 'low',
+    missingEvidence: hasOwnNotes ? [] : ['own_content_history_missing'],
     topics: themes,
     recurringThemes: themes,
     contentFormats: formats,
@@ -78,7 +111,13 @@ export function buildAccountProfileAnalysis({ facts = {}, notes = [], now = new 
     analyzedAt: now,
     noteCount: usableNotes.length,
   };
-  return { ...inferred, recentContent, accountName: text(facts.accountName), xhsId: text(facts.xhsId) };
+  return {
+    ...inferred,
+    recentContent,
+    accountName: text(facts.accountName),
+    userId: text(facts.userId),
+    xhsId: text(facts.xhsId),
+  };
 }
 
 export function analysisFieldMetadata(now = new Date().toISOString()) {

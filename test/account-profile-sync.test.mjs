@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, test } from 'node:test';
 import { AccountStore } from '../core/account/account-store.mjs';
+import { buildAccountProfileAnalysis } from '../core/account/profile-analysis.mjs';
 import { createSignal } from '../core/signals/schema.mjs';
 import { SignalStore } from '../core/signals/signal-store.mjs';
 import { createAccountApiHandler } from '../server/account-api.mjs';
@@ -46,6 +47,46 @@ test('XHS account sync stores separated public facts and analyzes only own saved
   assert.equal(body.profile.profileAnalysis.source, 'ai_profile_analysis');
   assert.equal(body.profile.profileAnalysis.type, 'inferred');
   assert.equal(body.profile.fieldSources.positioning, 'ai_profile_analysis');
+});
+
+test('zero own notes produce a low-confidence fallback profile from public facts', () => {
+  const analysis = buildAccountProfileAnalysis({
+    facts: {
+      userId: '5fbf43fa00000000100af2a',
+      xhsId: '1045421577',
+      bio: '设计学研1｜三本→研1｜intj 日常｜学习｜经验 plog',
+      publicTags: ['浙江理工大学', '学习', '经验', 'plog'],
+    },
+    notes: [],
+  });
+  assert.equal(analysis.noteCount, 0);
+  assert.notEqual(analysis.positioning, '');
+  assert.notEqual(analysis.niche, '');
+  assert.notEqual(analysis.targetAudience, '');
+  assert.ok(analysis.contentPillars.length > 0);
+  assert.equal(analysis.profileConfidence, 'low');
+  assert.ok(analysis.missingEvidence.includes('own_content_history_missing'));
+  assert.deepEqual(analysis.highPerformingThemes, []);
+});
+
+test('account store persists the facts-only fallback and missing evidence', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'account-profile-fallback-'));
+  cleanups.push(() => rm(folder, { recursive: true, force: true }));
+  const store = new AccountStore(join(folder, 'account.json'));
+  await store.syncXhsProfile({
+    userId: '5fbf43fa00000000100af2a',
+    xhsId: '1045421577',
+    bio: '设计学研1｜三本→研1｜intj 日常｜学习｜经验 plog',
+    publicTags: ['浙江理工大学', '学习', '经验', 'plog'],
+  }, { notes: [] });
+  const profile = await store.analyzeXhsProfile();
+  assert.equal(profile.recentContent.count, 0);
+  assert.notEqual(profile.positioning, '');
+  assert.notEqual(profile.niche, '');
+  assert.notEqual(profile.targetAudience, '');
+  assert.ok(profile.contentPillars.length > 0);
+  assert.equal(profile.profileAnalysis.profileConfidence, 'low');
+  assert.ok(profile.profileAnalysis.missingEvidence.includes('own_content_history_missing'));
 });
 
 test('canonical userId and public xhsId stay separate and own signals join by canonical id', async () => {

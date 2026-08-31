@@ -117,6 +117,7 @@ export class AccountStore {
       type: 'inferred',
       analyzedAt: now,
       noteCount: analysis.noteCount,
+      missingEvidence: analysis.missingEvidence,
     };
     next.fieldSources = sources;
     next.fieldMetadata = { ...metadata, ...Object.fromEntries(fields.filter((field) => sources[field] === 'ai_profile_analysis').map((field) => [field, metadata[field] || analysisFieldMetadata(now)[field]])) };
