@@ -89,3 +89,23 @@ Choose one of these mutually exclusive authorized paths:
 2. **Authorise importing the donor background runtime.** This requires an explicit exception for the currently prohibited Native Host, Knowledge, account import, extension storage and Chrome tabs/scripting dependencies, followed by a security review.
 
 Until one path is selected, the requested page-resident Beav UI cannot perform a real Redbook Signal/Creator ingest without reimplementing a collector protocol or silently coupling the product to prohibited Beav subsystems.
+
+## Native Chrome working copy (today's real-E2E path)
+
+The donor `Plugin/` directory is copied without changing the donor checkout to
+`extension/beav-redbook/`. This is the Redbook-owned Chrome working copy for
+today's real-data gate; Electron's embedded collector remains experimental and
+is not the primary path.
+
+| Feature | Donor entry point | Redbook change |
+| --- | --- | --- |
+| Current XHS note | `save-xhs` → `saveXhsNoteFromTab` → `extractXhsNotePayload` | copied background sends the donor payload to `redbookConnector.ingestNote` as the primary sink; the original Beav sink is retained only as an offline fallback |
+| Creator profile | `xhs:collect-current-blogger` → `collectXhsBloggerFromTab` → `extractXhsBloggerPayload` | copied background sends the donor payload to `redbookConnector.ingestCreator` as the primary sink and falls back to the original Beav sink when the connector is offline |
+| Creator homepage notes | `xhs:collect-blogger-notes` → `collectXhsBloggerNotesFromTab` | copied API/tab item boundaries forward each donor note with `creator-baseline` provenance; queue, scroll, retry and random interval remain donor code |
+| Connector health | Redbook-owned `src/redbookConnector.js` | `GET http://127.0.0.1:43127/health` with the typed `X-Redbook-Connector: beav-v1` header |
+
+The connector only transports donor-produced payloads. Platform selectors,
+identity detection, extraction, queueing and interval behavior are not
+reimplemented. Connector failure is logged locally and leaves the original
+Beav action available, so an offline Redbook Workbench does not crash the MV3
+service worker.

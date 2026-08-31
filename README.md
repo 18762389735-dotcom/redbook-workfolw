@@ -17,7 +17,11 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:5173`。接着按 [`vendor/beav/xhs-collector/README.md`](vendor/beav/xhs-collector/README.md) 加载精简 Chrome 扩展。实际采集数据保存为本机 `data/signals.json`，刷新页面后仍会存在。
+打开 `http://localhost:5173`（仅 Web 开发预览）。进行今天的真实采集验证时，请先启动桌面壳（已安装 EXE 或 `npm run desktop`），再在 Chrome 的“加载已解压的扩展程序”中选择完整原生 Beav working copy 的 manifest 目录：
+`extension/beav-redbook/src`。桌面壳必须先启动，它会在
+`http://127.0.0.1:43127` 提供 Redbook loopback connector；扩展将 Beav 已提取的 note/creator payload
+发送到该 connector，再进入 Signal/Creator Store。Electron 内嵌 Collector 仍是 experimental fallback，
+不作为今天的真实平台验收路径。实际采集数据保存为本机 `data/signals.json`，刷新页面后仍会存在。
 
 桌面壳开发与本地验证：
 

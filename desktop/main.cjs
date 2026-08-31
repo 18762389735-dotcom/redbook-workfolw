@@ -16,6 +16,7 @@ let xhsSession;
 let collector;
 let serverStopPromise = null;
 let appShutdownInProgress = false;
+let beavConnector;
 
 function projectRoot() { return app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..'); }
 function runtimeRoot() { return path.resolve(process.env.REDBOOK_DESKTOP_RUNTIME_DIR || app.getPath('userData')); }
@@ -57,6 +58,19 @@ async function stopLocalServer() {
   if (!child) return;
   serverStopPromise = stopChildProcess(child).finally(() => { serverStopPromise = null; });
   return serverStopPromise;
+}
+
+async function startBeavConnector() {
+  const { startBeavConnector: start } = await import('../server/beav-connector.mjs');
+  beavConnector = await start({ apiBaseUrl: serverUrl });
+  return beavConnector;
+}
+
+async function stopBeavConnector() {
+  const connector = beavConnector;
+  beavConnector = null;
+  if (!connector) return;
+  await connector.close();
 }
 
 function broadcastTask(task) { if (task) sendToWindow(workbenchWindow, 'desktop:collector-task-changed', task); }
@@ -151,11 +165,12 @@ function smokeRendererLoad() {
 async function main() {
   await app.whenReady();
   await startLocalServer();
+  await startBeavConnector();
   xhsSession = new XhsSession({ preloadPath: path.join(__dirname, 'xhs-preload.cjs'), onStatusChanged: (status) => sendToWindow(workbenchWindow, 'desktop:xhs-status-changed', status) });
   collector = new ElectronCollector({ xhsSession, serverUrl, runtimeRoot: runtimeRoot(), onTaskChanged: broadcastTask });
   registerIpc();
   if (process.argv.includes('--smoke-test')) {
-    try { await checkSmoke(); await smokeRendererLoad(); console.log('REDBOOK_DESKTOP_RENDERER_SMOKE_OK'); await stopLocalServer(); app.exit(0); } catch (error) { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopLocalServer(); app.exit(1); }
+    try { await checkSmoke(); await smokeRendererLoad(); console.log('REDBOOK_DESKTOP_RENDERER_SMOKE_OK'); await stopBeavConnector(); await stopLocalServer(); app.exit(0); } catch (error) { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopBeavConnector().catch(() => {}); await stopLocalServer(); app.exit(1); }
     return;
   }
   await createWorkbench();
@@ -165,12 +180,12 @@ app.on('window-all-closed', async () => {
   // Smoke probes create hidden XHS windows without a workbench window; do not
   // quit while the probe is still persisting its task evidence.
   if (process.argv.includes('--smoke-test')) return;
-  await xhsSession?.close(); await stopLocalServer(); app.quit();
+  await xhsSession?.close(); await stopBeavConnector(); await stopLocalServer(); app.quit();
 });
 app.on('before-quit', (event) => {
-  if (appShutdownInProgress || (!serverProcess && !xhsSession?.getWindow?.())) return;
+  if (appShutdownInProgress || (!serverProcess && !xhsSession?.getWindow?.() && !beavConnector)) return;
   event.preventDefault();
   appShutdownInProgress = true;
-  Promise.all([xhsSession?.close?.(), stopLocalServer()]).catch(() => {}).finally(() => app.quit());
+  Promise.all([xhsSession?.close?.(), stopBeavConnector(), stopLocalServer()]).catch(() => {}).finally(() => app.quit());
 });
-main().catch(async (error) => { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopLocalServer(); app.exit(1); });
+main().catch(async (error) => { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopBeavConnector().catch(() => {}); await stopLocalServer(); app.exit(1); });

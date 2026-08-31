@@ -50,6 +50,18 @@ XHS BrowserWindow 与 Workbench 都使用 `nodeIntegration: false`、`contextIso
 
 Batch 04.1 已实现 Option B 的结构化桌面 Collector 骨架；真实登录、公开页面采集和基线任务仍必须在本地人工验收。Option A 失败实验只保留为兼容性记录，不作为普通用户路径。
 
+## 今日真实数据验证路径
+
+为优先验证真实 XHS 数据闭环，当前推荐在正常 Chrome/Edge 的 MV3
+运行时加载 `extension/beav-redbook/src`（该目录包含复制的 `Plugin/src/manifest.json`）。
+Workbench 启动时同时提供固定 loopback connector：
+`http://127.0.0.1:43127`。原生 Beav background 继续负责页面识别、提取、队列和低频
+节奏；Redbook 只接收其结构化 note/creator payload，并经过现有 normalizer 与 Store
+API 入库。Connector 不读取 Cookie、密码或登录凭证。
+
+因此，今天的真人 E2E 使用“Chrome/Edge 原生 Beav 扩展 + Redbook Workbench”；
+Electron 内嵌 Collector 保留为实验性/开发 fallback，不再作为本轮真实平台通过条件。
+
 ## 签名与发布边界
 
 当前 NSIS 安装包未配置 Windows 代码签名证书，Release 会明确标注 unsigned；普通用户首次安装可能遇到 SmartScreen 提示。后续如购买证书，只需在 CI 的打包步骤注入签名配置，不应把证书或私钥提交到仓库。

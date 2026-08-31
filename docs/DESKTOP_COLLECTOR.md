@@ -40,3 +40,12 @@ XHS BrowserWindow 使用 `nodeIntegration: false`、`contextIsolation: true`、`
 开发时可以继续运行 `npm run desktop` 或加载 `vendor/beav/xhs-collector` 的 unpacked extension。正式 NSIS 安装包将把 `xhsBridge.js`、extractors、collector helpers 与 `vendor/beav/LICENSE` 一并打包；普通用户不应需要安装 Node/npm 或手动开启 Chrome developer mode。
 
 真实 XHS 登录与采集只能在本地人工进行，CI 只执行 structural smoke，不伪造平台数据。
+
+### Native Beav real-E2E fallback (current validation path)
+
+由于 Electron 44 的 MV3 service worker 兼容性仍属于冻结实验，真实平台验证不再
+依赖 Electron 内嵌采集器。启动 Workbench 后，在 Chrome/Edge 加载
+`extension/beav-redbook/src`，原生 Beav background 将已提取的 XHS payload 通过
+`http://127.0.0.1:43127` 发送到本地 Connector。Connector 仅作传输/适配边界，
+不重写 donor 的页面识别、提取、队列或节奏；Electron Collector 代码继续保留为
+experimental fallback。
