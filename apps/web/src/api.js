@@ -8,3 +8,6 @@ export const getMatching = () => requestJson('/api/matching');
 export const getDecisions = () => requestJson('/api/decisions');
 export const getOpportunities = () => requestJson('/api/opportunities');
 export const actOnOpportunity = (id, action) => requestJson(`/api/opportunities/${encodeURIComponent(id)}/action`, { method: 'POST', body: JSON.stringify({ action }) });
+export const getWritingWorkspace = () => requestJson('/api/writing');
+export const createWritingDraft = (opportunityId) => requestJson('/api/writing/drafts', { method: 'POST', body: JSON.stringify({ opportunityId }) });
+export const updateWritingDraft = (id, draft) => requestJson(`/api/writing/drafts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(draft) });

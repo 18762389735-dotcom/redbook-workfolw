@@ -4,12 +4,14 @@ import { dirname, resolve, sep } from 'node:path';
 import { CreatorStore } from '../core/creators/creator-store.mjs';
 import { AccountStore } from '../core/account/account-store.mjs';
 import { OpportunityStateStore } from '../core/opportunities/opportunity-state-store.mjs';
+import { DraftStore } from '../core/writing/draft-store.mjs';
 import { SignalStore } from '../core/signals/signal-store.mjs';
 import { createAccountApiHandler } from './account-api.mjs';
 import { createCreatorsApiHandler } from './creators-api.mjs';
 import { createDiscoveryApiHandler } from './discovery-api.mjs';
 import { createMatchingApiHandler } from './matching-api.mjs';
 import { createOpportunitiesApiHandler } from './opportunities-api.mjs';
+import { createWritingApiHandler } from './writing-api.mjs';
 import { createSignalsApiHandler } from './signals-api.mjs';
 import { createCorsPolicy, enforceCors } from './cors.mjs';
 
@@ -48,6 +50,7 @@ function createApi(runtimeRoot) {
     creatorStore: new CreatorStore(resolve(runtimeRoot, 'creators.json')),
     accountStore: new AccountStore(resolve(runtimeRoot, 'account.json')),
     opportunityStateStore: new OpportunityStateStore(resolve(runtimeRoot, 'opportunities.json')),
+    draftStore: new DraftStore(resolve(runtimeRoot, 'drafts.json')),
   };
   const signalsApi = createSignalsApiHandler(stores.signalStore);
   const creatorsApi = createCreatorsApiHandler(stores.creatorStore);
@@ -55,11 +58,13 @@ function createApi(runtimeRoot) {
   const accountApi = createAccountApiHandler(stores.accountStore);
   const matchingApi = createMatchingApiHandler(stores);
   const opportunitiesApi = createOpportunitiesApiHandler(stores);
+  const writingApi = createWritingApiHandler(stores);
   const api = (request, response) => {
     const pathname = new URL(request.url, 'http://localhost').pathname;
     if (pathname === '/api/account') return accountApi(request, response);
     if (pathname === '/api/matching' || pathname === '/api/decisions') return matchingApi(request, response);
     if (pathname === '/api/opportunities' || pathname.startsWith('/api/opportunities/')) return opportunitiesApi(request, response);
+    if (pathname === '/api/writing' || pathname.startsWith('/api/writing/')) return writingApi(request, response);
     if (pathname === '/api/discovery') return discoveryApi(request, response);
     if (pathname === '/api/creators' || pathname.startsWith('/api/creators/')) return creatorsApi(request, response);
     return signalsApi(request, response);
