@@ -5,6 +5,10 @@ const actionHintEl = document.getElementById('action-hint');
 const updatePanelEl = document.getElementById('update-panel');
 const updateStatusEl = document.getElementById('update-status');
 const updateMetaEl = document.getElementById('update-meta');
+const platformSafetyNoticeDialog = document.getElementById('platform-safety-notice-dialog');
+const platformSafetyNoticeTitle = document.getElementById('platform-safety-notice-title');
+const platformSafetyNoticeDescription = document.getElementById('platform-safety-notice-description');
+const platformSafetyNoticeConfirm = document.getElementById('platform-safety-notice-confirm');
 
 const buttons = {
   checkUpdate: document.getElementById('check-update'),
@@ -22,6 +26,7 @@ let refreshTimer = null;
 let connectionRefreshTimer = null;
 let popupOpenedAt = Date.now();
 let primaryBusy = false;
+let resolvePlatformSafetyNoticeDialog = null;
 let desktopConnection = {
   state: 'checking',
   ingestAllowed: false,
@@ -33,6 +38,7 @@ init().catch((error) => {
 });
 
 async function init() {
+  bindPlatformSafetyNoticeDialog();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   activeTab = tab || null;
 
@@ -129,8 +135,15 @@ async function runAction(type) {
   await refreshConnectionStatus(true);
   if (!desktopConnection.ingestAllowed) return;
   setBusy(true);
-  showResult('正在保存...', 'success');
+  showResult(isXhsSaveAction(type) ? '请先确认账号安全提示…' : '正在保存...', 'success');
   try {
+    if (isXhsSaveAction(type)) {
+      const confirmed = await ensurePlatformSaveSafetyNotice(type);
+      if (!confirmed) {
+        showResult('已取消保存', 'waiting');
+        return;
+      }
+    }
     const result = await sendMessage({ type, tabId: activeTab.id });
     if (!result?.success) {
       throw new Error(result?.error || '保存失败');
@@ -144,6 +157,58 @@ async function runAction(type) {
   } finally {
     setBusy(false);
   }
+}
+
+function isXhsSaveAction(type) {
+  return String(type || '') === 'save-xhs';
+}
+
+// Derived from Beav Plugin/src/sidepanel.js showPlatformSaveSafetyNotice and
+// ensurePlatformSaveSafetyNotice. Redbook adaptation only changes the DOM
+// bindings and reuses the existing background acknowledgement messages.
+function bindPlatformSafetyNoticeDialog() {
+  platformSafetyNoticeDialog?.addEventListener('close', () => {
+    const resolve = resolvePlatformSafetyNoticeDialog;
+    resolvePlatformSafetyNoticeDialog = null;
+    resolve?.(platformSafetyNoticeDialog.returnValue === 'confirm');
+  });
+}
+
+function showPlatformSaveSafetyNotice(notice) {
+  const title = String(notice?.title || '请先确认已登录小号');
+  const description = String(notice?.description || '频繁保存内容可能触发平台风控，影响账号正常使用。请先在当前浏览器登录专门用于采集的小号，再继续保存。');
+  const confirmLabel = String(notice?.confirmLabel || '我已登录小号，继续保存');
+  if (!platformSafetyNoticeDialog?.showModal) {
+    return Promise.resolve(window.confirm(`${title}\n\n${description}\n\n点击“确定”表示：${confirmLabel}`));
+  }
+  platformSafetyNoticeTitle.textContent = title;
+  platformSafetyNoticeDescription.textContent = description;
+  platformSafetyNoticeConfirm.textContent = confirmLabel;
+  return new Promise((resolve) => {
+    resolvePlatformSafetyNoticeDialog = resolve;
+    platformSafetyNoticeDialog.showModal();
+  });
+}
+
+async function ensurePlatformSaveSafetyNotice(action) {
+  const requirement = await sendMessage({
+    type: 'capture:platform-save-safety-notice:get',
+    action,
+    tabId: activeTab?.id || 0,
+  });
+  if (!requirement?.success) {
+    throw new Error(requirement?.error || '无法读取账号安全提示');
+  }
+  if (!requirement.required) return true;
+  if (!await showPlatformSaveSafetyNotice(requirement.notice)) return false;
+  const acknowledgement = await sendMessage({
+    type: 'capture:platform-save-safety-notice:acknowledge',
+    platform: requirement.platform,
+  });
+  if (!acknowledgement?.success) {
+    throw new Error(acknowledgement?.error || '无法确认账号安全提示');
+  }
+  return true;
 }
 
 async function runUpdateCheck() {
