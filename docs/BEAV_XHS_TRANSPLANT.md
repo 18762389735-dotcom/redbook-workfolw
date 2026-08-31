@@ -69,6 +69,8 @@ The approved vertical slice now keeps donor page files byte-identical under `ven
 | page detail/card `save-xhs` | `extractXhsNotePayload` | `redbook-payload-adapter.js` → `normalizeXiaohongshuSignal` → `/api/signals/ingest` |
 | typed creator action | `extractXhsBloggerPayload` | `redbook-payload-adapter.js` → `normalizeXiaohongshuCreator` → `/api/creators/ingest` |
 
+The extracted function locations in the local derived file are `extractXhsNotePayload` (line 10) and `extractXhsBloggerPayload` (line 844). In the donor snapshot the dispatch roots are `saveXhsNoteFromTab` (line 4666) and `collectXhsBloggerFromTab` (line 5373); their Chrome/Knowledge I/O is intentionally replaced at the adapter boundary.
+
 `desktop/xhs-preload.cjs` injects, in donor order, bridge → route bridge → page observer. `desktop/beav-extension-adapter.cjs` exposes only the two collector messages plus the page-state/safety responses needed by the unchanged observer. Main validates the sender as an owned XHS window before dispatching either action.
 
 The donor observer currently sets `ACCOUNT_BINDING_FEATURE_ENABLED = false`, so its unchanged profile control intentionally does not render the current-blogger action; the typed creator path is available to the Electron adapter and the existing Workbench fallback. Enabling a new overlay/profile detector would violate donor-first scope and is explicitly deferred. Homepage baseline, keyword batch, comments, downloads and the donor queue remain deferred.

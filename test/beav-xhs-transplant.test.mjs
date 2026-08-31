@@ -58,4 +58,6 @@ test('Electron Beav shim has a fixed collector message allowlist and no generic 
   const observer = await readFile(resolve(pluginRoot, 'pageObserver.js'), 'utf8');
   assert.match(observer, /type:\s*'save-xhs'/);
   assert.match(observer, /type:\s*'xhs:collect-current-blogger'/);
+  assert.match(observer, /const ACCOUNT_BINDING_FEATURE_ENABLED = false/);
+  assert.match(observer, /function isXhsProfilePath/);
 });

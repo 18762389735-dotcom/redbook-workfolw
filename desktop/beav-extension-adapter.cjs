@@ -1,4 +1,7 @@
-// Narrow compatibility surface for Beav's XHS pageObserver. This is not a
+// Derived adapter for Jamailar/Beav Plugin/src/pageObserver.js and its
+// background message names (background.js SHA256:
+// 0D5EA8786A0F86F79F3B78B03C4BDD7635FF8A69C3B413BE37FE178418F27DE4).
+// License: MIT License - Non-Commercial Use Only. This is not a
 // general Chrome extension API and deliberately exposes no Node capability.
 const PAGE_REQUEST_EVENT = 'redbook:beav-xhs-request';
 const PAGE_RESPONSE_EVENT = 'redbook:beav-xhs-response';
