@@ -95,6 +95,30 @@ function safeMethod(value, fallback) {
   return new Set(['current-note', 'visible-notes', 'creator-baseline', 'creator-profile']).has(method) ? method : fallback;
 }
 
+function safeCreatorUserId(value) {
+  const candidate = String(value || '').trim();
+  return /^[A-Za-z0-9_-]{1,128}$/.test(candidate) ? candidate : null;
+}
+
+// A homepage/baseline task is the only collector surface where the caller has
+// already established one canonical profile owner for every emitted note. Do
+// not apply this inheritance to feed, keyword, visible-note, or arbitrary
+// current-note captures: those surfaces may contain multiple authors.
+export function applyVerifiedCreatorContext(signalInput, source, options = {}) {
+  if (source?.method !== 'creator-baseline') return signalInput;
+  const creatorUserId = safeCreatorUserId(options?.creatorUserId);
+  if (!creatorUserId) return signalInput;
+  const author = signalInput?.author && typeof signalInput.author === 'object' ? signalInput.author : {};
+  return {
+    ...signalInput,
+    author: {
+      ...author,
+      id: creatorUserId,
+      name: author.name || (typeof options?.creatorNickname === 'string' && options.creatorNickname.trim() ? options.creatorNickname.trim() : null),
+    },
+  };
+}
+
 function unwrapPayload(body) {
   if (body && typeof body === 'object' && body.__redbook && typeof body.payload === 'object' && body.payload !== null) {
     return { payload: body.payload, options: body.__redbook };
@@ -121,7 +145,11 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
 
   async function ingestNote(payload, options = {}) {
     const source = sourceFor(options.method || 'current-note', payload, options.taskId, options.capturedAt);
-    const signalInput = beavNotePayloadToSignalInput(payload, source);
+    const signalInput = applyVerifiedCreatorContext(
+      beavNotePayloadToSignalInput(payload, source),
+      source,
+      options,
+    );
     const normalized = normalizeXiaohongshuSignal(signalInput, source);
     // The existing API performs the final platform normalization. Keep the
     // adapter-shaped input here so its explicit metrics and source metadata
@@ -152,7 +180,11 @@ export function createBeavConnector({ apiBaseUrl, ingestSignals, ingestCreators,
     for (let index = 0; index < notes.length; index += 1) {
       try {
         const source = sourceFor(options.method || 'creator-baseline', notes[index], taskId, capturedAt);
-        const input = beavNotePayloadToSignalInput(notes[index], source);
+        const input = applyVerifiedCreatorContext(
+          beavNotePayloadToSignalInput(notes[index], source),
+          source,
+          options,
+        );
         signals.push(normalizeXiaohongshuSignal(input, source));
       } catch (error) {
         errors.push({ index, error: error instanceof Error ? error.message : String(error) });

@@ -6,6 +6,16 @@
 const CONNECTOR_BASE = 'http://127.0.0.1:43127';
 const CONNECTOR_HEADER = 'beav-v1';
 
+function redbookOptions(options = {}) {
+  return {
+    method: options.method || 'current-note',
+    taskId: options.taskId || null,
+    capturedAt: options.capturedAt || null,
+    ...(options.creatorUserId ? { creatorUserId: options.creatorUserId } : {}),
+    ...(options.creatorNickname ? { creatorNickname: options.creatorNickname } : {}),
+  };
+}
+
 async function request(path, body) {
   const response = await fetch(`${CONNECTOR_BASE}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
@@ -28,11 +38,7 @@ export async function ingestNote(payload, options = {}) {
   try {
     return await request('/v1/xhs/note', {
       payload,
-      __redbook: {
-        method: options.method || 'current-note',
-        taskId: options.taskId || null,
-        capturedAt: options.capturedAt || null,
-      },
+      __redbook: redbookOptions(options),
     });
   }
   catch (error) { return { success: false, connected: false, error: error instanceof Error ? error.message : String(error), method: options.method || 'current-note' }; }
@@ -42,11 +48,7 @@ export async function ingestCreator(payload, options = {}) {
   try {
     return await request('/v1/xhs/creator', {
       payload,
-      __redbook: {
-        method: options.method || 'creator-profile',
-        taskId: options.taskId || null,
-        capturedAt: options.capturedAt || null,
-      },
+      __redbook: { ...redbookOptions({ ...options, method: options.method || 'creator-profile' }) },
     });
   }
   catch (error) { return { success: false, connected: false, error: error instanceof Error ? error.message : String(error) }; }
@@ -56,11 +58,7 @@ export async function ingestNotes(payloads, options = {}) {
   try {
     return await request('/v1/xhs/notes', {
       notes: Array.isArray(payloads) ? payloads : payloads?.notes,
-      __redbook: {
-        method: options.method || 'creator-baseline',
-        taskId: options.taskId || null,
-        capturedAt: options.capturedAt || null,
-      },
+      __redbook: { ...redbookOptions({ ...options, method: options.method || 'creator-baseline' }) },
     });
   }
   catch (error) { return { success: false, connected: false, error: error instanceof Error ? error.message : String(error) }; }

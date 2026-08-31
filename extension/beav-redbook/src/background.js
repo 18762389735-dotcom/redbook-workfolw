@@ -5883,11 +5883,15 @@ async function collectXhsBloggerNotesByMode(tabId, payload, options = {}) {
     return await collectXhsBloggerNotesWithTabs(payload, urls, {
       ...normalizedOptions,
       accountSession,
+      creatorUserId: normalizeText(payload?.userId),
+      creatorNickname: normalizeText(payload?.nickname),
     });
   }
   return await collectXhsBloggerNotesViaApi(tabId, payload, {
     ...normalizedOptions,
     accountSession,
+    creatorUserId: normalizeText(payload?.userId),
+    creatorNickname: normalizeText(payload?.nickname),
   });
 }
 
@@ -6114,7 +6118,11 @@ async function collectXhsBloggerNotesViaApi(tabId, payload, options = {}) {
         args: [note.urlInfo.href, note.urlInfo.id],
       });
       const entryPayload = buildXhsNotePayloadFromFeed(feedResult, note.urlInfo);
-      const redbookResult = await forwardToRedbook('note', entryPayload, { method: 'creator-baseline' });
+      const redbookResult = await forwardToRedbook('note', entryPayload, {
+        method: 'creator-baseline',
+        creatorUserId: normalizeText(payloadState?.userId),
+        creatorNickname: normalizeText(payloadState?.nickname),
+      });
       await syncXhsTaskStep({
         current: results.length + failures.length,
         total: pendingNotes.length,
@@ -6367,7 +6375,11 @@ async function collectXhsNoteLinks(urlsInput, options = {}) {
       if (!payload?.title && !payload?.content && !payload?.images?.length && !payload?.videoUrl) {
         throw new Error('未识别到笔记内容');
       }
-      const redbookResult = await forwardToRedbook('note', payload, { method: 'creator-baseline' });
+      const redbookResult = await forwardToRedbook('note', payload, {
+        method: 'creator-baseline',
+        creatorUserId: normalizeText(options?.creatorUserId),
+        creatorNickname: normalizeText(options?.creatorNickname),
+      });
       await syncXhsTaskStep({
         current: results.length + failures.length,
         total: targetUrls.length,
