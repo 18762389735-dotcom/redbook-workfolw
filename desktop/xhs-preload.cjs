@@ -1,54 +1,55 @@
 /*
- * The isolated preload obtains fixed, vendored Beav sources from Electron Main
- * and injects them in the donor lifecycle order: xhsBridge/route bridge in
- * Main World, then pageObserver and the Redbook overlay companion in an
- * isolated world. The page receives only a narrow chrome.runtime shim; it
- * never receives Node or generic IPC.
+ * XHS preload boundary.
+ *
+ * Beav's page observer and the Redbook overlay companion execute in isolated
+ * world 9876. Only the three typed operations below cross into Electron Main;
+ * no ipcRenderer, generic invoke, or Node capability is exposed to the page.
  */
-const { ipcRenderer, webFrame } = require('electron');
-const PAGE_REQUEST_EVENT = 'redbook:beav-xhs-request';
-const PAGE_RESPONSE_EVENT = 'redbook:beav-xhs-response';
-const PROFILE_CLICK_EVENT = 'redbook:xhs-overlay-profile-click';
-const PROFILE_CLICK_RESPONSE_EVENT = 'redbook:xhs-overlay-profile-response';
-const ALLOWED_MESSAGES = new Set(['save-xhs', 'xhs:collect-current-blogger']);
-ALLOWED_MESSAGES.add('redbook:xhs:collect-confirmed-creator');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
-function respond(id, result) {
-  const detail = JSON.stringify({ id, result });
-  webFrame.executeJavaScript(`window.dispatchEvent(new CustomEvent(${JSON.stringify(PAGE_RESPONSE_EVENT)}, { detail: ${JSON.stringify(detail)} }));`).catch(() => {});
-}
+const ALLOWED_MESSAGES = new Set(['save-xhs', 'xhs:collect-current-blogger', 'redbook:xhs:collect-confirmed-creator']);
 
-function respondProfileClick(payload) {
-  const detail = JSON.stringify(payload);
-  webFrame.executeJavaScriptInIsolatedWorld(9876, [{ code: `window.dispatchEvent(new CustomEvent(${JSON.stringify(PROFILE_CLICK_RESPONSE_EVENT)}, { detail: ${JSON.stringify(detail)} }));` }]).catch(() => {});
-}
-
-window.addEventListener(PROFILE_CLICK_EVENT, async (event) => {
-  let payload;
-  try { payload = JSON.parse(String(event.detail || '')); } catch { return; }
+function sanitizeProfileClick(payload) {
   const profileId = String(payload?.profileId || '').trim();
   const pathname = String(payload?.pathname || '');
   const observedAt = Number(payload?.observedAt);
-  if (!/^[A-Za-z0-9_-]+$/.test(profileId) || pathname !== `/user/profile/${profileId}` || !Number.isFinite(observedAt) || Math.abs(Date.now() - observedAt) > 10_000) return;
-  try {
-    const result = await ipcRenderer.invoke('desktop:beav-xhs-profile-click', { profileId, pathname, observedAt });
-    respondProfileClick({ profileId, generation: Number(payload?.generation) || 0, result });
-  } catch (error) {
-    respondProfileClick({ profileId, generation: Number(payload?.generation) || 0, result: { confirmed: false, reason: String(error?.message || error) } });
-  }
-}, true);
+  if (!/^[A-Za-z0-9_-]+$/.test(profileId)) return null;
+  if (pathname !== `/user/profile/${profileId}`) return null;
+  if (!Number.isFinite(observedAt) || Math.abs(Date.now() - observedAt) > 10_000) return null;
+  return { profileId, pathname, observedAt };
+}
 
-window.addEventListener(PAGE_REQUEST_EVENT, async (event) => {
-  let request;
-  try { request = JSON.parse(String(event.detail || '')); } catch { return; }
-  if (!request?.id || !request.message || !ALLOWED_MESSAGES.has(request.message.type)) return;
-  try {
-    const result = await ipcRenderer.invoke('desktop:beav-xhs-collector-action', request.message.type, request.message.payload || null);
-    respond(request.id, { success: true, result });
-  } catch (error) {
-    respond(request.id, { success: false, error: String(error?.message || error || 'collector failed') });
-  }
-}, true);
+function errorMessage(error, fallback) {
+  return String(error?.message || error || fallback);
+}
+
+const isolatedBridge = Object.freeze({
+  ping() {
+    return { bridge: 'redbook-xhs', version: 1 };
+  },
+
+  sendCollectorMessage(message) {
+    const type = message && typeof message === 'object' ? String(message.type || '') : '';
+    if (!ALLOWED_MESSAGES.has(type)) return Promise.reject(new Error('unsupported-beav-xhs-message'));
+    const payload = message && typeof message === 'object' ? message.payload || null : null;
+    return ipcRenderer.invoke('desktop:beav-xhs-collector-action', type, payload)
+      .then((result) => ({ success: true, result }))
+      .catch((error) => ({ success: false, error: errorMessage(error, 'collector failed') }));
+  },
+
+  confirmProfileClick(payload) {
+    const sanitized = sanitizeProfileClick(payload);
+    if (!sanitized) return Promise.resolve({ confirmed: false, reason: 'invalid-profile-click' });
+    return ipcRenderer.invoke('desktop:beav-xhs-profile-click', sanitized)
+      .then((result) => result || { confirmed: false, reason: 'empty-profile-confirmation' })
+      .catch((error) => ({ confirmed: false, reason: errorMessage(error, 'profile confirmation failed') }));
+  },
+});
+
+// Electron 44 supports this API. Keeping the bridge in world 9876 preserves
+// the donor page observer's isolated-world lifecycle without exposing it to
+// the XHS Main World.
+contextBridge.exposeInIsolatedWorld(9876, 'redbookXhsBridge', isolatedBridge);
 
 try {
   const sources = ipcRenderer.sendSync('desktop:beav-xhs-sources-sync');
@@ -57,11 +58,11 @@ try {
     const isolatedScript = `try { ${sources.pageShim}\n;eval(${JSON.stringify(sources.pageObserver)});\n;eval(${JSON.stringify(sources.overlayCompanion)}); } catch (error) { window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ = String(error && error.message || error); }`;
     const inject = () => webFrame.executeJavaScript(mainWorldScript)
       .then(() => webFrame.executeJavaScriptInIsolatedWorld(9876, [{ code: isolatedScript }]))
-      .then(() => webFrame.executeJavaScript('window.__REDBOOK_BEAV_PAGE_OBSERVER_INSTALLED__ = true; window.__REDBOOK_BEAV_XHS_SHIM_INSTALLED__ = true;'))
+      .then(() => webFrame.executeJavaScriptInIsolatedWorld(9876, [{ code: 'window.__REDBOOK_BEAV_PAGE_OBSERVER_INSTALLED__ = true; window.__REDBOOK_BEAV_XHS_SHIM_INSTALLED__ = true;' }]))
       .catch((error) => {
         // The marker is deliberately data-only so structural smoke can report
         // an injection failure without surfacing Electron internals to XHS.
-        webFrame.executeJavaScript(`window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ = ${JSON.stringify(String(error?.message || error))};`).catch(() => {});
+        webFrame.executeJavaScriptInIsolatedWorld(9876, [{ code: `window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ = ${JSON.stringify(String(error?.message || error))};` }]).catch(() => {});
       });
     // Electron 44 can stall navigation when executeJavaScriptInIsolatedWorld
     // is invoked synchronously at document_start. Queue one turn so the

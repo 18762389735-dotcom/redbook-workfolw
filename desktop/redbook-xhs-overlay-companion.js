@@ -4,21 +4,17 @@
  * user click to a canonical profile ID supplied by the XHS page state.
  */
 (() => {
-  const CLICK_EVENT = 'redbook:xhs-overlay-profile-click';
-  const CLICK_RESPONSE_EVENT = 'redbook:xhs-overlay-profile-response';
   const ROOT_ID = 'redbook-collector-overlay-companion';
   const TTL_MS = 10_000;
   let generation = 0;
   let context = null;
   let timer = null;
   let host = null;
-  let responseCleanup = null;
 
   function invalidate() {
     generation += 1;
     context = null;
     if (timer) { clearTimeout(timer); timer = null; }
-    responseCleanup?.(); responseCleanup = null;
     host?.remove?.();
     host = null;
   }
@@ -72,32 +68,27 @@
     card.append(label, name, button, status); shadow.append(style, card); document.documentElement.append(host);
   }
 
-  function handleResponse(event, expectedGeneration, profile) {
-    let response;
-    try { response = JSON.parse(String(event.detail || '')); } catch { return; }
-    if (response?.profileId !== profile.profileId || response?.generation !== expectedGeneration) return;
-    responseCleanup?.(); responseCleanup = null;
-    if (response.result?.confirmed === true && expectedGeneration === generation) {
-      context = { profileId: profile.profileId, pathname: profile.pathname, nickname: response.result.nickname || null, confirmedAt: response.result.confirmedAt };
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(invalidate, Math.max(0, TTL_MS - (Date.now() - profile.observedAt)));
-      render(context);
-    }
-  }
-
   document.addEventListener('click', (event) => {
     const profile = nearestProfile(event.composedPath?.() || []);
     if (!profile) return;
     invalidate();
     const clickGeneration = generation;
-    const onResult = (responseEvent) => handleResponse(responseEvent, clickGeneration, profile);
-    window.addEventListener(CLICK_RESPONSE_EVENT, onResult, true);
-    const cleanupForThisClick = () => window.removeEventListener(CLICK_RESPONSE_EVENT, onResult, true);
-    responseCleanup = cleanupForThisClick;
-    window.dispatchEvent(new CustomEvent(CLICK_EVENT, { detail: JSON.stringify({ ...profile, generation: clickGeneration }) }));
-    setTimeout(() => { if (responseCleanup === cleanupForThisClick) { cleanupForThisClick(); responseCleanup = null; } }, TTL_MS);
+    if (!window.redbookXhsBridge || typeof window.redbookXhsBridge.confirmProfileClick !== 'function') {
+      window.__REDBOOK_XHS_OVERLAY_COMPANION_ERROR__ = 'bridge-unavailable';
+      return;
+    }
+    Promise.resolve(window.redbookXhsBridge.confirmProfileClick(profile)).then((result) => {
+      if (clickGeneration !== generation || result?.confirmed !== true) return;
+      context = { profileId: profile.profileId, pathname: profile.pathname, nickname: result.nickname || null, confirmedAt: result.confirmedAt };
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(invalidate, Math.max(0, TTL_MS - (Date.now() - profile.observedAt)));
+      render(context);
+    }).catch(() => {
+      if (clickGeneration === generation) window.__REDBOOK_XHS_OVERLAY_COMPANION_ERROR__ = 'bridge-unavailable';
+    });
   }, true);
   window.addEventListener('redbox:locationchange', invalidate, true);
   window.addEventListener('pagehide', invalidate, true);
   window.addEventListener('beforeunload', invalidate, true);
+  window.__REDBOOK_XHS_OVERLAY_COMPANION_INSTALLED__ = true;
 })();

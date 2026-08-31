@@ -299,8 +299,28 @@ class ElectronCollector {
     await this.updateTask(task.id, { status: 'running' });
     const hidden = await this.xhsSession.createHidden('data:text/html,<title>Collector%20Smoke</title>');
     try {
-      const bridge = await this.page(hidden, () => ({ installed: window.__REDBOX_XHS_BRIDGE_INSTALLED__ === true, responses: Array.isArray(window.__REDBOX_XHS_RESPONSES__), observer: window.__REDBOOK_BEAV_PAGE_OBSERVER_INSTALLED__ === true, shim: window.__REDBOOK_BEAV_XHS_SHIM_INSTALLED__ === true, observerError: window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ || null, nodeGlobals: ['require', 'process', 'Buffer'].filter((key) => typeof window[key] !== 'undefined') }), [], 'bridge-smoke');
-      if (!bridge.installed || !bridge.responses || !bridge.observer || !bridge.shim || bridge.nodeGlobals.length) throw new Error(`xhs-preload Beav injection flags missing or page globals exposed: ${JSON.stringify(bridge)}`);
+      const mainWorld = await this.page(hidden, () => ({
+        bridgeType: typeof window.redbookXhsBridge,
+        installed: window.__REDBOX_XHS_BRIDGE_INSTALLED__ === true,
+        responses: Array.isArray(window.__REDBOX_XHS_RESPONSES__),
+        nodeGlobals: ['require', 'process', 'Buffer'].filter((key) => typeof window[key] !== 'undefined'),
+      }), [], 'bridge-main-world-smoke');
+      const isolatedWorld = await hidden.webContents.executeJavaScriptInIsolatedWorld(9876, [{ code: `(async () => ({
+        bridgeType: typeof window.redbookXhsBridge,
+        bridgeKeys: window.redbookXhsBridge ? Object.keys(window.redbookXhsBridge).sort() : [],
+        ping: window.redbookXhsBridge && typeof window.redbookXhsBridge.ping === 'function' ? window.redbookXhsBridge.ping() : null,
+        shimType: typeof window.chrome?.runtime?.sendMessage,
+        unknownMessage: await window.chrome.runtime.sendMessage({ type: '__smoke_unknown__' }).then(() => ({ resolved: true })).catch((error) => ({ rejected: true, error: String(error?.message || error) })),
+        observer: window.__REDBOOK_BEAV_PAGE_OBSERVER_INSTALLED__ === true,
+        shim: window.__REDBOOK_BEAV_XHS_SHIM_INSTALLED__ === true,
+        companion: window.__REDBOOK_XHS_OVERLAY_COMPANION_INSTALLED__ === true,
+        observerError: window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ || null,
+        nodeGlobals: ['require', 'process', 'Buffer'].filter((key) => typeof window[key] !== 'undefined'),
+      }))()` }], true);
+      const bridge = { mainWorld, isolatedWorld };
+      const expectedKeys = ['confirmProfileClick', 'ping', 'sendCollectorMessage'];
+      if (mainWorld.bridgeType !== 'undefined' || !mainWorld.installed || !mainWorld.responses || mainWorld.nodeGlobals.length) throw new Error(`xhs-preload Main World boundary failed: ${JSON.stringify(mainWorld)}`);
+      if (isolatedWorld.bridgeType !== 'object' || JSON.stringify(isolatedWorld.bridgeKeys) !== JSON.stringify(expectedKeys) || isolatedWorld.ping?.bridge !== 'redbook-xhs' || isolatedWorld.ping?.version !== 1 || isolatedWorld.shimType !== 'function' || isolatedWorld.unknownMessage?.rejected !== true || !isolatedWorld.observer || !isolatedWorld.shim || !isolatedWorld.companion || isolatedWorld.nodeGlobals.length) throw new Error(`xhs-preload isolated transport failed: ${JSON.stringify(isolatedWorld)}`);
       if (typeof beavRuntime.extractXhsNotePayload !== 'function' || typeof beavRuntime.extractXhsBloggerPayload !== 'function' || typeof beavAdapter.beavNotePayloadToSignalInput !== 'function' || typeof beavAdapter.beavCreatorPayloadToCreatorInput !== 'function') throw new Error('Beav XHS runtime import failed');
       await this.updateTask(task.id, { status: 'cancelled', completedAt: now() });
       return { partition: this.xhsSession.partition, bridge, extractCandidateCards: typeof payload.extractCandidateCards === 'function', taskId: task.id };
