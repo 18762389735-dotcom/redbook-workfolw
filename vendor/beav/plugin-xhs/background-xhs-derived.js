@@ -958,10 +958,12 @@ function extractXhsBloggerPayload(expectedProfileId = '') {
     '',
   );
   const text = normalizeText(profileRoot.innerText || profileRoot.textContent || '');
+  const firstMetricLabel = text.match(/关注|粉丝|获赞与收藏/);
+  const metricsBeforeLabels = Boolean(firstMetricLabel && /[0-9.万亿]+\s*$/.test(text.slice(0, firstMetricLabel.index)));
   const readMetric = (label) => {
     const after = text.match(new RegExp(`${label}\\s*[:：]?\\s*([0-9.万亿]+)`));
     const before = text.match(new RegExp(`([0-9.万亿]+)\\s*${label}`));
-    return after?.[1] || before?.[1] || '';
+    return metricsBeforeLabels ? (before?.[1] || after?.[1] || '') : (after?.[1] || before?.[1] || '');
   };
   const fansText = readMetric('粉丝') || stateUser.fans || stateUser.fansCount || stateBasic.fans || stateBasic.fansCount || '';
   const followsText = readMetric('关注') || stateUser.follows || stateUser.followingCount || stateBasic.follows || stateBasic.followingCount || '';

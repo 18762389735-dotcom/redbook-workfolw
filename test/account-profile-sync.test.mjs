@@ -131,6 +131,8 @@ test('account sync uses the existing XHS blogger extractor action in both UI ada
   assert.match(background, /case 'account:sync-xhs-profile'/);
   assert.match(background, /runExtraction\(tabId, extractXhsBloggerPayload/);
   assert.match(background, /forwardToRedbook\('account'/);
+  assert.match(background, /xhsId: publicXhsId/);
+  assert.match(background, /metricsBeforeLabels/);
   assert.match(sidepanel, /action: 'syncAccount'/);
   assert.match(sidepanel, /type: 'account:sync-xhs-profile'/);
 });
