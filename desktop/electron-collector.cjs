@@ -1,9 +1,9 @@
 const { join } = require('node:path');
 const { isUsableWindow, safeWindowUrl, safeDestroyWindow } = require('./xhs-session.cjs');
+const { executePageFunction } = require('./page-execution.cjs');
 
 const now = () => new Date().toISOString();
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-const invoke = (fn, args = []) => `(${fn.toString()})(${args.map((value) => JSON.stringify(value)).join(',')})`;
 
 class ElectronCollector {
   constructor({ xhsSession, serverUrl, runtimeRoot, onTaskChanged } = {}) {
@@ -33,11 +33,11 @@ class ElectronCollector {
     return payload;
   }
 
-  async page(window, functionValue, args = []) {
+  async page(window, functionValue, args = [], label = 'page') {
     if (!isUsableWindow(window)) throw new Error('请先打开小红书会话');
     const contents = window.webContents;
     if (contents.isDestroyed()) throw new Error('小红书会话已关闭');
-    return contents.executeJavaScript(invoke(functionValue, args), true);
+    return executePageFunction(contents, functionValue, args, label);
   }
 
   async collectVisible() {
@@ -50,8 +50,8 @@ class ElectronCollector {
     const task = await this.createTask('visible-notes', 0);
     try {
       await this.updateTask(task.id, { status: 'running', startedAt: now() });
-      const responses = await this.page(window, () => window.__REDBOX_XHS_RESPONSES__ || []);
-      const context = await this.page(window, extractors.extractVisibleContext);
+      const responses = await this.page(window, () => window.__REDBOX_XHS_RESPONSES__ || [], [], 'visible-responses');
+      const context = await this.page(window, extractors.extractVisibleContext, [], 'visible-context');
       const links = new Map((context.links || []).map((item) => [String(item.noteId), item.url]));
       const currentId = new URL(context.pageUrl || url).pathname.match(/\/(?:explore|discovery\/item)\/([^/?#]+)/)?.[1];
       const observedKeyword = /^\/search_result\/?$/i.test(new URL(url).pathname) ? new URL(url).searchParams.get('keyword') : null;
@@ -82,7 +82,7 @@ class ElectronCollector {
     const task = await this.createTask('creator-profile', 1);
     try {
       await this.updateTask(task.id, { status: 'running', startedAt: now() });
-      const raw = await this.page(window, extractors.extractXhsBloggerPayload);
+      const raw = await this.page(window, extractors.extractXhsBloggerPayload, [], 'creator-profile');
       const source = { provider: 'beav-derived-electron-session', method: 'creator-profile', taskId: task.id, capturedAt: now() };
       const normalized = creator.normalizeXiaohongshuCreator(payload.buildCreatorSignalPayload(raw, { profileUrl, taskId: task.id, capturedAt: source.capturedAt }), source);
       const result = await this.post('/api/creators/ingest', { creators: [normalized] });
@@ -110,7 +110,7 @@ class ElectronCollector {
     let notes = [];
     try {
       await this.updateTask(task.id, { status: 'running', startedAt: now() });
-      const profile = await this.page(window, extractors.extractXhsBloggerNotesPayload, [limit, 'auto']);
+      const profile = await this.page(window, extractors.extractXhsBloggerNotesPayload, [limit, 'auto'], 'creator-notes');
       notes = (profile?.notes || []).slice(0, limit);
       await this.updateTask(task.id, { progress: { total: notes.length }, profile: { userId: profile?.userId || null, nickname: profile?.nickname || null, source: profile?.source || profileUrl || null, collectionMode: profile?.collectionMode || null, apiError: profile?.apiError || null } });
       if (!notes.length) throw new Error(profile?.apiError || '未从博主页取得近期公开笔记');
@@ -121,7 +121,7 @@ class ElectronCollector {
         try {
           const detailWindow = await this.xhsSession.createHidden(note.url);
           try {
-            const detail = await this.page(detailWindow, extractors.extractObservedNoteFeed, [note.noteId, 6000]);
+            const detail = await this.page(detailWindow, extractors.extractObservedNoteFeed, [note.noteId, 6000], 'observed-note-feed');
             const raw = detail || note.raw || { note_id: note.noteId, display_title: note.title, cover: note.coverUrl };
             const capturedAt = now();
             const rawSignal = payload.buildBaselineSignalPayload(raw, { url: note.url, taskId: task.id, capturedAt });
@@ -156,7 +156,7 @@ class ElectronCollector {
     await this.updateTask(task.id, { status: 'running' });
     const hidden = await this.xhsSession.createHidden('data:text/html,<title>Collector%20Smoke</title>');
     try {
-      const bridge = await this.page(hidden, () => ({ installed: window.__REDBOX_XHS_BRIDGE_INSTALLED__ === true, responses: Array.isArray(window.__REDBOX_XHS_RESPONSES__) }));
+      const bridge = await this.page(hidden, () => ({ installed: window.__REDBOX_XHS_BRIDGE_INSTALLED__ === true, responses: Array.isArray(window.__REDBOX_XHS_RESPONSES__) }), [], 'bridge-smoke');
       if (!bridge.installed || !bridge.responses) throw new Error('xhs-preload bridge injection flags missing');
       await this.updateTask(task.id, { status: 'cancelled', completedAt: now() });
       return { partition: this.xhsSession.partition, bridge, extractCandidateCards: typeof payload.extractCandidateCards === 'function', taskId: task.id };
