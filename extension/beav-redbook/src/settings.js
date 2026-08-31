@@ -2,7 +2,7 @@ const DEFAULT_SETTINGS = {
   actionLaunchMode: 'popup',
   xhsSaveCommentsWithNote: true,
   saveToRedboxByDefault: true,
-  autoUpdateCheck: true,
+  autoUpdateCheck: false,
 };
 
 const elements = {
@@ -58,7 +58,7 @@ function normalizeFormSettings() {
     actionLaunchMode: elements.actionLaunchSidePanel.checked ? 'sidepanel' : 'popup',
     xhsSaveCommentsWithNote: elements.xhsSaveComments.checked,
     saveToRedboxByDefault: elements.saveDefault.checked,
-    autoUpdateCheck: elements.autoUpdate.checked,
+    autoUpdateCheck: false,
   };
 }
 
@@ -76,6 +76,7 @@ function setBusy(busy) {
     element.disabled = busy;
   });
   elements.testConnection.disabled = busy;
+  elements.autoUpdate.disabled = true;
 }
 
 async function saveSettings() {

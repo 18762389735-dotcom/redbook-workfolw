@@ -9,6 +9,7 @@ const platformSafetyNoticeDialog = document.getElementById('platform-safety-noti
 const platformSafetyNoticeTitle = document.getElementById('platform-safety-notice-title');
 const platformSafetyNoticeDescription = document.getElementById('platform-safety-notice-description');
 const platformSafetyNoticeConfirm = document.getElementById('platform-safety-notice-confirm');
+const REDBOOK_FORMAL_MODE = true;
 
 const buttons = {
   checkUpdate: document.getElementById('check-update'),
@@ -53,7 +54,7 @@ async function init() {
   await refreshConnectionStatus();
 
   ensureCaptureTypeElement();
-  await refreshUpdateStatus(false);
+  if (!REDBOOK_FORMAL_MODE) await refreshUpdateStatus(false);
   await refreshPageInfo();
   startRefreshLoop();
   startConnectionRefreshLoop();
@@ -84,7 +85,7 @@ function inferPageInfoFromUrl(rawUrl) {
     return {
       kind: 'wechat-article',
       action: 'save-page-link',
-      label: '保存公众号文章到知识库',
+      label: '保存公众号文章到工作台',
       description: '当前页面已识别为公众号文章，将完整保存正文、图片和排版。',
       primaryEnabled: true,
       detected: true,
@@ -97,7 +98,7 @@ function inferPageInfoFromUrl(rawUrl) {
       return {
         kind: 'youtube',
         action: 'save-youtube',
-        label: '保存YouTube视频到知识库',
+        label: '保存YouTube视频到工作台',
         description: '当前页面已识别为 YouTube 视频页。',
         primaryEnabled: true,
         detected: true,
@@ -149,7 +150,7 @@ async function runAction(type) {
       throw new Error(result?.error || '保存失败');
     }
     const detail = result.duplicate
-      ? (result.updated ? '已存在于知识库，已更新已有内容。' : '已存在于知识库，已跳过重复保存。')
+      ? (result.updated ? '工作台中已存在，已更新已有内容。' : '工作台中已存在，已跳过重复保存。')
       : `保存成功${result.noteId ? `：${result.noteId}` : ''}`;
     showResult(detail, 'success');
   } catch (error) {
@@ -212,6 +213,7 @@ async function ensurePlatformSaveSafetyNotice(action) {
 }
 
 async function runUpdateCheck() {
+  if (REDBOOK_FORMAL_MODE) return;
   setUpdateButtonsBusy(true);
   updateStatusEl.textContent = '正在检查插件更新...';
   updateStatusEl.className = 'status';
@@ -416,16 +418,16 @@ function renderDesktopConnection() {
     return;
   }
   if (desktopConnection.state === 'recovering') {
-    serverStatusEl.textContent = 'Beav 正在恢复连接，请稍候…';
+    serverStatusEl.textContent = '小红书采集助手正在恢复连接，请稍候…';
     serverStatusEl.className = 'status';
     return;
   }
   if (desktopConnection.state === 'attention') {
-    serverStatusEl.textContent = '连接需要处理，请升级 Beav 或重新加载插件';
+    serverStatusEl.textContent = '连接需要处理，请重新加载小红书采集助手';
     serverStatusEl.className = 'status error';
     return;
   }
-  serverStatusEl.textContent = '未连接 · 请打开 Beav';
+  serverStatusEl.textContent = '小红书 AI 运营工作台未启动';
   serverStatusEl.className = 'status error';
 }
 
@@ -437,7 +439,7 @@ function normalizePageInfo(pageInfo) {
   return {
     kind: pageInfo.kind || 'generic',
     action: pageInfo.action || 'save-page-link',
-    label: pageInfo.label || '仅保存链接到知识库',
+    label: pageInfo.label || '仅保存链接到工作台',
     description: pageInfo.description || '当前页面可作为链接收藏保存到工作台。',
     primaryEnabled: pageInfo.primaryEnabled !== false,
     detected: Boolean(pageInfo.detected),
@@ -449,7 +451,7 @@ function createLinkFallbackPageInfo(overrides = {}) {
   return {
     kind: 'generic',
     action: 'save-page-link',
-    label: '仅保存链接到知识库',
+    label: '仅保存链接到工作台',
     description: '当前页面可作为链接收藏保存到工作台。',
     primaryEnabled: true,
     detected: false,

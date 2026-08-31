@@ -134,7 +134,7 @@ test('Redbook extension copy is packaged separately from the vendor tree', async
   const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
   const manifest = JSON.parse(await readFile(join(root, 'extension', 'beav-redbook', 'src', 'manifest.json'), 'utf8'));
   assert.equal(manifest.background.type, 'module');
-  assert.match(manifest.name, /Redbook/);
+  assert.equal(manifest.name, '小红书采集助手');
   assert.equal(await readFile(join(root, 'extension', 'beav-redbook', 'src', 'redbookConnector.js'), 'utf8').then((text) => text.includes('127.0.0.1:43127')), true);
   const background = await readFile(join(root, 'extension', 'beav-redbook', 'src', 'background.js'), 'utf8');
   assert.match(background, /forwardToRedbook\('note'/);

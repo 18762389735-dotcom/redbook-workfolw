@@ -22,6 +22,10 @@ const UPDATE_ALARM_NAME = 'redbox-plugin-auto-update-check';
 const UPDATE_CHECK_INTERVAL_MINUTES = 360;
 const UPDATE_SOURCE_API_URL = 'https://redbox.ziz.hk/api/updates/plugin';
 const UPDATE_SOURCE_DOWNLOAD_URL = 'https://redbox.ziz.hk/download';
+// Redbook's browser extension is the formal XHS persistence path. The native
+// Beav host remains available for donor features, but it must not be required
+// for Redbook note/creator ingestion.
+const REDBOOK_FORMAL_MODE = true;
 const REDBOX_PLUGIN_SETTINGS_KEY = 'redboxPluginSettings';
 const XHS_TASK_HISTORY_KEY = 'xhsCollectorTaskHistory';
 const XHS_TASK_QUEUE_STATE_KEY = 'xhsCollectorTaskQueueState';
@@ -52,21 +56,34 @@ async function forwardToRedbook(kind, payload, options = {}) {
         : await redbookConnector.ingestNote(payload, taskOptions);
     if (result?.success === false) {
       pluginWarn('redbook-connector-unavailable', { kind, error: String(result.error || 'connector unavailable') });
+      throw Object.assign(new Error(result.error || '小红书 AI 运营工作台未启动'), {
+        code: 'REDBOOK_CONNECTOR_UNAVAILABLE',
+        retryable: true,
+      });
     }
     return result;
   } catch (error) {
     pluginWarn('redbook-connector-forward-failed', { kind, error: describeError(error) });
-    return { success: false, connected: false, error: describeError(error) };
+    if (error?.code === 'REDBOOK_CONNECTOR_UNAVAILABLE') throw error;
+    throw Object.assign(new Error('小红书 AI 运营工作台未启动'), {
+      code: 'REDBOOK_CONNECTOR_UNAVAILABLE',
+      retryable: true,
+      cause: error,
+    });
   }
 }
 
 async function checkRedbookAwareHealth(forceRefresh = false) {
-  const nativeHealth = await checkDesktopServer(forceRefresh).catch((error) => ({
-    success: false,
-    error: error instanceof Error ? error.message : String(error),
-  }));
   const redbookHealth = await redbookConnector.health();
-  if (!redbookHealth?.ok) return nativeHealth;
+  if (!redbookHealth?.ok) {
+    return {
+      success: false,
+      code: 'REDBOOK_CONNECTOR_UNAVAILABLE',
+      error: '小红书 AI 运营工作台未启动',
+      retryable: true,
+      redbookConnector: redbookHealth,
+    };
+  }
   return {
     success: true,
     context: {
@@ -75,7 +92,7 @@ async function checkRedbookAwareHealth(forceRefresh = false) {
       space: { name: 'Redbook Workflow' },
     },
     redbookConnector: redbookHealth,
-    native: nativeHealth,
+    formalPath: REDBOOK_FORMAL_MODE ? 'redbook-connector' : 'native-beav',
   };
 }
 const XHS_COLLECT_INTERVAL_DEFAULT_MIN_MS = 1500;
@@ -143,7 +160,7 @@ const DEFAULT_PLUGIN_SETTINGS = {
   xhsBloggerCollectionMode: 'api',
   xhsSaveCommentsWithNote: true,
   saveToRedboxByDefault: true,
-  autoUpdateCheck: true,
+  autoUpdateCheck: false,
 };
 
 const USER_PROFILE_FEATURE_ENABLED = true;
@@ -215,8 +232,8 @@ function createLinkFallbackPageInfo(overrides = {}) {
   return {
     kind: 'generic',
     action: 'save-page-link',
-    label: '仅保存链接到知识库',
-    description: '当前页面可作为链接收藏保存到知识库。',
+    label: '仅保存链接到工作台',
+    description: '当前页面可作为链接收藏保存到工作台。',
     primaryEnabled: true,
     detected: false,
     statusText: '未检测到内容',
@@ -228,25 +245,25 @@ function ensureContextMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU_ROOT_ID,
-      title: '保存到 Beav',
+      title: '保存到小红书 AI 运营工作台',
       contexts: ['page', 'selection', 'link', 'image', 'video'],
     });
     chrome.contextMenus.create({
       id: MENU_PAGE_ID,
       parentId: MENU_ROOT_ID,
-      title: '保存当前页面内容到知识库',
+      title: '保存当前页面内容到工作台',
       contexts: ['page'],
     });
     chrome.contextMenus.create({
       id: MENU_SELECTION_ID,
       parentId: MENU_ROOT_ID,
-      title: '保存选中文字到知识库',
+      title: '保存选中文字到工作台',
       contexts: ['selection'],
     });
     chrome.contextMenus.create({
       id: MENU_LINK_ID,
       parentId: MENU_ROOT_ID,
-      title: '保存当前链接到知识库',
+      title: '保存当前链接到工作台',
       contexts: ['link'],
     });
     chrome.contextMenus.create({
@@ -258,7 +275,7 @@ function ensureContextMenus() {
     chrome.contextMenus.create({
       id: MENU_VIDEO_ID,
       parentId: MENU_ROOT_ID,
-      title: '保存当前视频到知识库',
+      title: '保存当前视频到工作台',
       contexts: ['video'],
     });
   });
@@ -455,7 +472,7 @@ async function handleMessage(message, sender) {
       return { success: true, settings: await writePluginSettings(DEFAULT_PLUGIN_SETTINGS) };
     case 'settings:test-connection':
       clearCachedKnowledgeApi();
-      return await checkDesktopServer(true);
+      return await checkRedbookAwareHealth(true);
     case 'capture:platform-save-safety-notice:get':
       return {
         success: true,
@@ -671,7 +688,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
     return {
       kind: 'wechat-article',
       action: 'save-page-link',
-      label: '保存公众号文章到知识库',
+      label: '保存公众号文章到工作台',
       description: '当前页面已识别为公众号文章，将完整保存正文、图片和排版。',
       detected: true,
     };
@@ -684,7 +701,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
         kind: 'zhihu-article',
         platform: 'zhihu',
         action: 'save-zhihu-article',
-        label: '保存知乎文章到知识库',
+        label: '保存知乎文章到工作台',
         description: '当前页面已识别为知乎专栏文章，将保存正文和专栏信息。',
         detected: true,
       };
@@ -703,7 +720,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
         kind: 'zhihu-answer',
         platform: 'zhihu',
         action: 'save-zhihu-answer',
-        label: '保存知乎回答到知识库',
+        label: '保存知乎回答到工作台',
         description: '当前页面已识别为知乎回答页，将保存问题和最高赞回答。',
         detected: true,
       };
@@ -721,7 +738,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       return {
         kind: 'youtube',
         action: 'save-youtube',
-        label: '保存YouTube视频到知识库',
+        label: '保存YouTube视频到工作台',
         description: '当前页面已识别为 YouTube 视频页。',
         detected: true,
       };
@@ -738,7 +755,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       return {
         kind: 'xhs-profile',
         action: 'xhs:collect-current-blogger',
-        label: '保存小红书博主资料到知识库',
+        label: '保存小红书博主资料到工作台',
         description: '当前页面已识别为小红书博主页。',
         detected: true,
       };
@@ -747,7 +764,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       return {
         kind: 'xhs-note',
         action: 'save-xhs',
-        label: '保存小红书笔记到知识库',
+        label: '保存小红书笔记到工作台',
         description: '当前页面已识别为小红书笔记页。',
         detected: true,
       };
@@ -764,7 +781,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
         kind: 'douyin-video',
         platform: 'douyin',
         action: 'save-douyin',
-        label: '保存抖音视频到知识库',
+        label: '保存抖音视频到工作台',
         description: '当前页面已识别为抖音视频页。',
         detected: true,
       };
@@ -784,7 +801,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       kind: isVideoPage ? 'bilibili-video' : isSpacePage ? 'bilibili-profile' : isSearchPage ? 'bilibili-search' : 'bilibili-page',
       platform: 'bilibili',
       action: 'save-bilibili',
-      label: isVideoPage ? '保存 Bilibili 视频页到知识库' : '保存 Bilibili 页面到知识库',
+      label: isVideoPage ? '保存 Bilibili 视频页到工作台' : '保存 Bilibili 页面到工作台',
       description: isVideoPage ? '当前页面已识别为 Bilibili 视频页。' : '当前页面已识别为 Bilibili 页面。',
       detected: true,
     };
@@ -796,7 +813,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       kind: isVideoPage ? 'kuaishou-video' : 'kuaishou-page',
       platform: 'kuaishou',
       action: 'save-kuaishou',
-      label: isVideoPage ? '保存快手视频页到知识库' : '保存快手页面到知识库',
+      label: isVideoPage ? '保存快手视频页到工作台' : '保存快手页面到工作台',
       description: isVideoPage ? '当前页面已识别为快手视频页。' : '当前页面已识别为快手页面。',
       detected: true,
     };
@@ -808,7 +825,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       kind: isVideoPage ? 'tiktok-video' : 'tiktok-page',
       platform: 'tiktok',
       action: 'save-tiktok',
-      label: isVideoPage ? '保存 TikTok 视频页到知识库' : '保存 TikTok 页面到知识库',
+      label: isVideoPage ? '保存 TikTok 视频页到工作台' : '保存 TikTok 页面到工作台',
       description: isVideoPage ? '当前页面已识别为 TikTok 视频页。' : '当前页面已识别为 TikTok 页面。',
       detected: true,
     };
@@ -820,7 +837,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       kind: isPostPage ? 'reddit-post' : 'reddit-page',
       platform: 'reddit',
       action: 'save-reddit',
-      label: isPostPage ? '保存 Reddit 帖子到知识库' : '保存 Reddit 页面到知识库',
+      label: isPostPage ? '保存 Reddit 帖子到工作台' : '保存 Reddit 页面到工作台',
       description: isPostPage ? '当前页面已识别为 Reddit 帖子。' : '当前页面已识别为 Reddit 页面。',
       detected: true,
     };
@@ -832,7 +849,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       kind: isPostPage ? 'x-post' : 'x-page',
       platform: 'x',
       action: 'save-x',
-      label: isPostPage ? '保存 X 推文到知识库' : '保存 X 页面到知识库',
+      label: isPostPage ? '保存 X 推文到工作台' : '保存 X 页面到工作台',
       description: isPostPage ? '当前页面已识别为 X 推文。' : '当前页面已识别为 X 页面。',
       detected: true,
     };
@@ -844,7 +861,7 @@ function detectCaptureTargetFromUrl(rawUrl) {
       kind: isPostPage ? 'instagram-post' : 'instagram-page',
       platform: 'instagram',
       action: 'save-instagram',
-      label: isPostPage ? '保存 Instagram 内容到知识库' : '保存 Instagram 页面到知识库',
+      label: isPostPage ? '保存 Instagram 内容到工作台' : '保存 Instagram 页面到工作台',
       description: isPostPage ? '当前页面已识别为 Instagram 内容页。' : '当前页面已识别为 Instagram 页面。',
       detected: true,
     };
@@ -1030,7 +1047,7 @@ function normalizePluginSettings(input = {}) {
     xhsBloggerCollectionMode: normalizeText(source.xhsBloggerCollectionMode) === 'tab' ? 'tab' : 'api',
     xhsSaveCommentsWithNote: source.xhsSaveCommentsWithNote !== false,
     saveToRedboxByDefault: source.saveToRedboxByDefault !== false,
-    autoUpdateCheck: source.autoUpdateCheck !== false,
+    autoUpdateCheck: REDBOOK_FORMAL_MODE ? false : source.autoUpdateCheck !== false,
   };
 }
 
@@ -1210,7 +1227,7 @@ async function openSidePanelForSender(sender) {
 async function getSidePanelContext(tabIdInput) {
   const { tab } = await resolveMessageTab({ tabId: tabIdInput }, null);
   const [health, browserControl] = await Promise.all([
-    checkDesktopServer().catch((error) => ({
+    checkRedbookAwareHealth().catch((error) => ({
       success: false,
       error: error instanceof Error ? error.message : String(error),
     })),
@@ -1847,13 +1864,13 @@ function summarizeXhsTaskResult(result) {
     return `评论 ${Number(result.count || 0)} 条`;
   }
   if (result?.mode === 'xhs-blogger') {
-    return '博主资料已写入知识库';
+    return '博主资料已写入工作台';
   }
   if (/^(bilibili|kuaishou|tiktok|reddit|x|instagram)-/.test(String(result?.mode || ''))) {
-    return result.duplicate ? '重复内容已跳过' : '平台内容已写入知识库';
+    return result.duplicate ? '工作台中已存在' : '平台内容已写入工作台';
   }
   if (result?.noteId) {
-    return result.duplicate ? '重复内容已跳过' : '已写入知识库';
+    return result.duplicate ? '工作台中已存在' : '已写入工作台';
   }
   return '任务已完成';
 }
@@ -2425,8 +2442,8 @@ async function applyUpdateBadge(stateInput) {
   const state = sanitizeUpdateState(stateInput);
   await chrome.action.setBadgeText({ text: '' }).catch(() => {});
   const title = state.hasUpdate
-    ? `Beav：发现新版本 ${state.latestVersion}`
-    : `Beav ${state.currentVersion}`;
+    ? `小红书采集助手：发现新版本 ${state.latestVersion}`
+    : `小红书采集助手 ${state.currentVersion}`;
   await chrome.action.setTitle({ title }).catch(() => {});
 }
 
@@ -4710,7 +4727,6 @@ async function saveZhihuArticleFromTab(tabId) {
 
 async function saveXhsNoteFromTab(tabId, options = {}) {
   const payload = await runExtraction(tabId, extractXhsNotePayload, { world: 'MAIN' });
-  const settings = await readPluginSettings();
   console.log('[redbox-plugin][xhs] payload', {
     title: payload?.title || '',
     imageCount: Array.isArray(payload?.images) ? payload.images.length : 0,
@@ -4722,95 +4738,14 @@ async function saveXhsNoteFromTab(tabId, options = {}) {
     throw new Error('当前页面未识别到可保存的小红书笔记或文章');
   }
   const redbookResult = await forwardToRedbook('note', payload, { method: 'current-note' });
-  // Redbook is the primary sink when its connector is online. Do not require
-  // a separate Beav Desktop/Knowledge service for a successful collection.
-  if (redbookResult?.success === true) {
-    return {
-      success: true,
-      mode: 'xhs-redbook',
-      noteId: redbookResult.noteId || normalizeText(payload?.noteId),
-      duplicate: Number(redbookResult.duplicates || 0) > 0,
-      comments: 0,
-      storageStatus: 'redbook-connector',
-      readBack: null,
-      sourceUrl: normalizeText(payload?.source),
-      externalId: normalizeText(payload?.noteId),
-    };
-  }
-  let commentsPayload = {};
-  if (settings.xhsSaveCommentsWithNote !== false) {
-    await upsertCaptureCheckpoint(buildXhsCommentsCheckpoint({
-      source: payload?.source,
-      noteId: payload?.noteId,
-      total: Number(payload?.stats?.comments || 0),
-    }, {
-      status: 'started',
-    })).catch((error) => {
-      pluginWarn('xhs-comments-checkpoint-start-failed', { error: describeError(error) });
-    });
-    commentsPayload = await runExtraction(tabId, extractXhsCommentsPayload, { world: 'MAIN', captureRuntime: true })
-      .catch((error) => {
-        pluginWarn('xhs-comments-inline-extract-failed', {
-          error: describeError(error),
-        });
-        void upsertCaptureCheckpoint(buildXhsCommentsCheckpoint({
-          source: payload?.source,
-          noteId: payload?.noteId,
-          total: Number(payload?.stats?.comments || 0),
-        }, {
-          status: 'failed',
-          error: error instanceof Error ? error.message : String(error),
-        })).catch(() => {});
-        return {};
-      });
-    if (Array.isArray(commentsPayload?.captureDiagnostics)) {
-      pluginLog('xhs-comments-capture-diagnostics', {
-        count: Array.isArray(commentsPayload?.comments) ? commentsPayload.comments.length : 0,
-        total: Number(commentsPayload?.total || 0),
-        events: commentsPayload.captureDiagnostics.slice(-6),
-      });
-      await upsertCaptureCheckpoint(buildXhsCommentsCheckpoint(commentsPayload, {
-        source: commentsPayload?.source || payload?.source,
-        sourceId: commentsPayload?.noteId || payload?.noteId,
-        status: 'loaded',
-      })).catch((error) => {
-        pluginWarn('xhs-comments-checkpoint-loaded-failed', { error: describeError(error) });
-      });
-    }
-  }
-  let response;
-  try {
-    response = await postKnowledgeXhsEntryV2(buildXhsEntryV2Request(payload, commentsPayload, options.metadata));
-    if (Array.isArray(commentsPayload?.comments) && commentsPayload.comments.length > 0) {
-      await upsertCaptureCheckpoint(buildXhsCommentsCheckpoint(commentsPayload, {
-        source: commentsPayload?.source || payload?.source,
-        sourceId: commentsPayload?.noteId || payload?.noteId,
-        status: 'persisted',
-      })).catch((error) => {
-        pluginWarn('xhs-comments-checkpoint-persisted-failed', { error: describeError(error) });
-      });
-    }
-  } catch (error) {
-    if (settings.xhsSaveCommentsWithNote !== false) {
-      await upsertCaptureCheckpoint(buildXhsCommentsCheckpoint(commentsPayload, {
-        source: commentsPayload?.source || payload?.source,
-        sourceId: commentsPayload?.noteId || payload?.noteId,
-        total: Number(commentsPayload?.total || payload?.stats?.comments || 0),
-        captured: Array.isArray(commentsPayload?.comments) ? commentsPayload.comments.length : 0,
-        status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
-      })).catch(() => {});
-    }
-    throw error;
-  }
   return {
     success: true,
-    mode: 'xhs',
-    noteId: response.entryId || '',
-    duplicate: Boolean(response.duplicate),
-    comments: Number(response?.comments?.captured || 0),
-    storageStatus: response?.storageStatus || (response?.persisted === true ? 'stored' : ''),
-    readBack: response?.readBack || null,
+    mode: 'xhs-redbook',
+    noteId: redbookResult.noteId || normalizeText(payload?.noteId),
+    duplicate: Number(redbookResult.duplicates || 0) > 0,
+    comments: 0,
+    storageStatus: 'redbook-connector',
+    readBack: null,
     sourceUrl: normalizeText(payload?.source),
     externalId: normalizeText(payload?.noteId),
   };
@@ -5413,7 +5348,7 @@ async function collectXhsCommentsFromTab(tabId) {
     title: `评论采集：${normalizeText(payload?.title) || '小红书笔记'}`,
     status: 'completed',
     count: comments.length,
-    summary: `已采集 ${comments.length} 条评论并写入知识库`,
+    summary: `已采集 ${comments.length} 条评论并写入工作台`,
     payload: {
       source: payload?.source || '',
       noteId: payload?.noteId || '',
@@ -5437,15 +5372,7 @@ async function collectXhsBloggerFromTab(tabId) {
     throw new Error('当前页面未识别到小红书博主信息');
   }
   const redbookResult = await forwardToRedbook('creator', payload, { method: 'creator-profile' });
-  const response = redbookResult?.success === true
-    ? { entryId: redbookResult.userId || payload?.userId || '', duplicate: Number(redbookResult.duplicates || 0) > 0 }
-    : await postKnowledgeEntry(buildXhsBloggerEntry(payload));
-  const accountResponse = redbookResult?.success === true ? null : await createAccountImportSessionFromXhs(payload).catch((error) => {
-    pluginWarn('xhs-account-import-session-failed', {
-      error: describeError(error),
-    });
-    return null;
-  });
+  const response = { entryId: redbookResult.userId || payload?.userId || '', duplicate: Number(redbookResult.duplicates || 0) > 0 };
   const historyItem = await appendXhsTaskHistory({
     id: `xhs-blogger-${hashString(`${payload?.source || ''}-${Date.now()}`)}`,
     type: 'blogger',
@@ -5464,8 +5391,8 @@ async function collectXhsBloggerFromTab(tabId) {
     mode: 'xhs-blogger',
     noteId: response.entryId || '',
     duplicate: Boolean(response.duplicate),
-    account: accountResponse?.account || null,
-    importSession: accountResponse?.session || null,
+    account: null,
+    importSession: null,
     task: historyItem,
   };
 }
@@ -5926,12 +5853,14 @@ async function collectXhsBloggerNotesByMode(tabId, payload, options = {}) {
     payloadApiError: normalizeText(payload?.apiError),
     options: describeBloggerCollectOptions(normalizedOptions),
   });
-  const accountSession = await ensureXhsAccountImportSession(payload, normalizedOptions).catch((error) => {
-    pluginWarn('xhs-account-import-session-ensure-failed', {
-      error: describeError(error),
+  const accountSession = REDBOOK_FORMAL_MODE
+    ? null
+    : await ensureXhsAccountImportSession(payload, normalizedOptions).catch((error) => {
+      pluginWarn('xhs-account-import-session-ensure-failed', {
+        error: describeError(error),
+      });
+      return null;
     });
-    return null;
-  });
   appendXhsTaskLog({
     type: 'xhs:collect-blogger-notes',
     status: 'running',
@@ -6192,23 +6121,10 @@ async function collectXhsBloggerNotesViaApi(tabId, payload, options = {}) {
         message: `正在写入第 ${index + 1}/${pendingNotes.length} 条笔记`,
         mode: 'api',
       });
-      const response = redbookResult?.success === true
-        ? { entryId: redbookResult.noteId || entryPayload.noteId, duplicate: Number(redbookResult.duplicates || 0) > 0 }
-        : options.saveToRedBox !== false ? await postKnowledgeEntry(buildXhsEntry(entryPayload)) : null;
-      if (redbookResult?.success !== true) {
-        const accountPost = buildXhsAccountPostFromEntry(entryPayload);
-        if (response?.entryId) accountPost.knowledgeEntryId = normalizeText(response.entryId);
-        if (normalizeText(entryPayload?.videoUrl)) accountPost.transcriptionStatus = response?.entryId ? 'processing' : 'waiting';
-        accountPosts.push(accountPost);
-      }
-      if (redbookResult?.success !== true && options.saveToRedBox !== false) {
-        await markCollectedXhsNotesForBlogger({
-          userId: payloadState?.userId,
-          source: payloadState?.source,
-          nickname: titleName,
-          noteIds: [entryPayload.noteId],
-        });
-      }
+      const response = {
+        entryId: redbookResult.noteId || entryPayload.noteId,
+        duplicate: Number(redbookResult.duplicates || 0) > 0,
+      };
       results.push({
         url: note.urlInfo.href,
         title: normalizeText(entryPayload.title) || note.urlInfo.href,
@@ -6458,9 +6374,10 @@ async function collectXhsNoteLinks(urlsInput, options = {}) {
         message: `正在写入第 ${index + 1}/${targetUrls.length} 条笔记`,
         mode: normalizeText(options?.mode) || 'tab',
       });
-      const response = redbookResult?.success === true
-        ? { entryId: redbookResult.noteId || payload?.noteId, duplicate: Number(redbookResult.duplicates || 0) > 0 }
-        : shouldSave ? await postKnowledgeEntry(buildXhsEntry(payload)) : null;
+      const response = {
+        entryId: redbookResult.noteId || payload?.noteId,
+        duplicate: Number(redbookResult.duplicates || 0) > 0,
+      };
       results.push({
         url,
         title: normalizeText(payload?.title) || url,
@@ -9899,8 +9816,8 @@ function detectCaptureTarget() {
     return {
       kind: 'generic',
       action: 'save-page-link',
-      label: '仅保存链接到知识库',
-      description: '当前页面可作为链接收藏保存到知识库。',
+      label: '仅保存链接到工作台',
+      description: '当前页面可作为链接收藏保存到工作台。',
       primaryEnabled: true,
       detected: false,
       statusText: '未检测到内容',
@@ -9917,7 +9834,7 @@ function detectCaptureTarget() {
       return {
         kind: 'youtube',
         action: 'save-youtube',
-        label: '保存YouTube视频到知识库',
+        label: '保存YouTube视频到工作台',
         description: '当前页面已识别为 YouTube 视频页。',
         detected: true,
       };
@@ -10228,7 +10145,7 @@ function detectCaptureTarget() {
       return {
         kind: isVideoNote ? 'xhs-video' : 'xhs-image',
         action: 'save-xhs',
-        label: isVideoNote ? '保存小红书视频笔记到知识库' : '保存小红书图文到知识库',
+        label: isVideoNote ? '保存小红书视频笔记到工作台' : '保存小红书图文到工作台',
         description: isVideoNote ? '当前页面已识别为小红书视频笔记。' : '当前页面已识别为小红书图文笔记。',
         detected: true,
       };
@@ -10239,7 +10156,7 @@ function detectCaptureTarget() {
       return {
         kind: 'xhs-article',
         action: 'save-xhs',
-        label: '保存小红书图文到知识库',
+        label: '保存小红书图文到工作台',
         description: '当前页面已识别为小红书图文内容页。',
         detected: true,
       };
@@ -10281,7 +10198,7 @@ function detectCaptureTarget() {
         kind: 'douyin-video',
         platform: 'douyin',
         action: 'save-douyin',
-        label: '保存抖音视频到知识库',
+        label: '保存抖音视频到工作台',
         description: '当前页面已识别为抖音视频页。',
         detected: true,
       };
@@ -10303,7 +10220,7 @@ function detectCaptureTarget() {
       kind: isVideoPage ? 'bilibili-video' : isSpacePage ? 'bilibili-profile' : isSearchPage ? 'bilibili-search' : 'bilibili-page',
       platform: 'bilibili',
       action: 'save-bilibili',
-      label: isVideoPage ? '保存 Bilibili 视频页到知识库' : '保存 Bilibili 页面到知识库',
+      label: isVideoPage ? '保存 Bilibili 视频页到工作台' : '保存 Bilibili 页面到工作台',
       description: isVideoPage ? '当前页面已识别为 Bilibili 视频页。' : '当前页面已识别为 Bilibili 页面。',
       detected: true,
     };
@@ -10316,7 +10233,7 @@ function detectCaptureTarget() {
       kind: isVideoPage ? 'kuaishou-video' : 'kuaishou-page',
       platform: 'kuaishou',
       action: 'save-kuaishou',
-      label: isVideoPage ? '保存快手视频页到知识库' : '保存快手页面到知识库',
+      label: isVideoPage ? '保存快手视频页到工作台' : '保存快手页面到工作台',
       description: isVideoPage ? '当前页面已识别为快手视频页。' : '当前页面已识别为快手页面。',
       detected: true,
     };
@@ -10329,7 +10246,7 @@ function detectCaptureTarget() {
       kind: isVideoPage ? 'tiktok-video' : 'tiktok-page',
       platform: 'tiktok',
       action: 'save-tiktok',
-      label: isVideoPage ? '保存 TikTok 视频页到知识库' : '保存 TikTok 页面到知识库',
+      label: isVideoPage ? '保存 TikTok 视频页到工作台' : '保存 TikTok 页面到工作台',
       description: isVideoPage ? '当前页面已识别为 TikTok 视频页。' : '当前页面已识别为 TikTok 页面。',
       detected: true,
     };
@@ -10342,7 +10259,7 @@ function detectCaptureTarget() {
       kind: isPostPage ? 'reddit-post' : 'reddit-page',
       platform: 'reddit',
       action: 'save-reddit',
-      label: isPostPage ? '保存 Reddit 帖子到知识库' : '保存 Reddit 页面到知识库',
+      label: isPostPage ? '保存 Reddit 帖子到工作台' : '保存 Reddit 页面到工作台',
       description: isPostPage ? '当前页面已识别为 Reddit 帖子。' : '当前页面已识别为 Reddit 页面。',
       detected: true,
     };
@@ -10355,7 +10272,7 @@ function detectCaptureTarget() {
       kind: isPostPage ? 'x-post' : 'x-page',
       platform: 'x',
       action: 'save-x',
-      label: isPostPage ? '保存 X 推文到知识库' : '保存 X 页面到知识库',
+      label: isPostPage ? '保存 X 推文到工作台' : '保存 X 页面到工作台',
       description: isPostPage ? '当前页面已识别为 X 推文。' : '当前页面已识别为 X 页面。',
       detected: true,
     };
@@ -10368,7 +10285,7 @@ function detectCaptureTarget() {
       kind: isPostPage ? 'instagram-post' : 'instagram-page',
       platform: 'instagram',
       action: 'save-instagram',
-      label: isPostPage ? '保存 Instagram 内容到知识库' : '保存 Instagram 页面到知识库',
+      label: isPostPage ? '保存 Instagram 内容到工作台' : '保存 Instagram 页面到工作台',
       description: isPostPage ? '当前页面已识别为 Instagram 内容页。' : '当前页面已识别为 Instagram 页面。',
       detected: true,
     };
@@ -10378,7 +10295,7 @@ function detectCaptureTarget() {
     return {
       kind: 'wechat-article',
       action: 'save-page-link',
-      label: '保存公众号文章到知识库',
+      label: '保存公众号文章到工作台',
       description: '当前页面已识别为公众号文章，将完整保存正文、图片和排版。',
       detected: true,
     };
@@ -10390,8 +10307,8 @@ function detectCaptureTarget() {
     return {
       kind: 'link-article',
       action: 'save-page-link',
-      label: '保存链接文章到知识库',
-      description: '将提取正文、来源和封面保存到知识库。',
+      label: '保存链接文章到工作台',
+      description: '将提取正文、来源和封面保存到工作台。',
       detected: true,
     };
   }

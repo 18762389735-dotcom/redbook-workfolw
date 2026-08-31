@@ -13,8 +13,16 @@ The collector, page observer, XHS extraction, creator extraction, homepage
 collection, queue, interval, and SPA observation remain donor behavior. The
 Redbook additions are limited to `src/redbookConnector.js`, the forwarding
 calls in the copied `src/background.js`, and enabling Beav's existing
-`ACCOUNT_BINDING_FEATURE_ENABLED` profile control in the working copy. Connector failures are best-effort so
-the original Beav flow remains usable when Redbook is offline.
+`ACCOUNT_BINDING_FEATURE_ENABLED` profile control in the working copy. For the
+Redbook save actions, the loopback connector is the formal sink: a connector
+failure is surfaced to the user and never silently falls back to a separate
+Beav Desktop or Knowledge service.
+
+This working copy is the native Chrome/Edge path for real-data validation. The
+Electron embedded collector is experimental and is not required for the
+browser extension to ingest notes, creators, or homepage-note batches. Beav's
+updater UI/checks are disabled in this fork; releases are shipped with the
+Redbook Workflow workbench.
 
 The copied upstream files retain their original attribution and are not
 covered by Redbook's own license. Commercial use of the derived collector
