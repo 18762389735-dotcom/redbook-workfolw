@@ -19,7 +19,7 @@ test('production Server uses loopback and an OS-assigned port', async () => {
   const runtimeRoot = await mkdtemp(join(tmpdir(), 'redbook-server-'));
   const running = await startServer({ production: true, host: '0.0.0.0', port: 0, runtimeRoot });
   cleanups.push(async () => { await closeServer(running.server); await rm(runtimeRoot, { recursive: true, force: true }); });
-  assert.equal(running.host, '127.0.0.1'); assert.ok(running.port > 0); assert.match(running.url, /^http:\/\/127\.0\.0\.1:\d+$/); assert.equal(running.server.address().address, '127.0.0.1');
+  assert.equal(running.host, '127.0.0.1'); assert.ok(running.port >= 30000 && running.port < 50000); assert.match(running.url, /^http:\/\/127\.0\.0\.1:\d+$/); assert.equal(running.server.address().address, '127.0.0.1');
   for (const endpoint of ['/api/account', '/api/discovery', '/api/opportunities']) assert.equal((await fetch(`${running.url}${endpoint}`)).status, 200);
   const account = await (await fetch(`${running.url}/api/account`)).json(); assert.equal(account.displayName, '');
   await fetch(`${running.url}/api/account`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'runtime-test' }) });
@@ -29,7 +29,13 @@ test('production Server uses loopback and an OS-assigned port', async () => {
 test('production Server serves the built renderer', async () => {
   const runtimeRoot = await mkdtemp(join(tmpdir(), 'redbook-static-')); const running = await startServer({ production: true, port: 0, runtimeRoot });
   cleanups.push(async () => { await closeServer(running.server); await rm(runtimeRoot, { recursive: true, force: true }); });
-  const response = await fetch(`${running.url}/`); assert.equal(response.status, 200); assert.match(await response.text(), /小红书 AI 内容运营工作台|root/);
+  const response = await fetch(`${running.url}/`); assert.equal(response.status, 200); assert.match(response.headers.get('content-type') || '', /^text\/html;/);
+  const html = await response.text(); assert.match(html, /小红书 AI 内容运营工作台|root/);
+  const scriptPath = html.match(/src="([^"]+\.js)"/)?.[1]; const stylePath = html.match(/href="([^"]+\.css)"/)?.[1];
+  assert.ok(scriptPath, 'built renderer must reference a JavaScript module'); assert.ok(stylePath, 'built renderer must reference a stylesheet');
+  const script = await fetch(`${running.url}${scriptPath}`); const style = await fetch(`${running.url}${stylePath}`);
+  assert.equal(script.status, 200); assert.match(script.headers.get('content-type') || '', /^text\/javascript;/);
+  assert.equal(style.status, 200); assert.match(style.headers.get('content-type') || '', /^text\/css;/);
 });
 
 test('electron build files exclude runtime data and include desktop server', async () => {

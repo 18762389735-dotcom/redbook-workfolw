@@ -15,6 +15,33 @@ import { createCorsPolicy, enforceCors } from './cors.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+const STATIC_CONTENT_TYPES = new Map([
+  ['.html', 'text/html; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.mjs', 'text/javascript; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.ico', 'image/x-icon'],
+  ['.woff2', 'font/woff2'],
+]);
+const DESKTOP_PORT_MIN = 30000;
+const DESKTOP_PORT_SPAN = 20000;
+const DESKTOP_PORT_ATTEMPTS = 20;
+
+function staticContentType(filePath) {
+  const extension = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+  return STATIC_CONTENT_TYPES.get(extension) || 'application/octet-stream';
+}
+
+function nextDesktopPort() {
+  return DESKTOP_PORT_MIN + Math.floor(Math.random() * DESKTOP_PORT_SPAN);
+}
+
 function createApi(runtimeRoot) {
   const stores = {
     signalStore: new SignalStore(resolve(runtimeRoot, 'signals.json')),
@@ -47,16 +74,20 @@ async function serveProduction(request, response, api) {
   try {
     const requested = request.url === '/' ? resolve(dist, 'index.html') : resolve(dist, `.${request.url}`);
     if (!requested.startsWith(`${dist}${sep}`) || !statSync(requested).isFile()) throw new Error('not file');
+    response.writeHead(200, { 'content-type': staticContentType(requested) });
     createReadStream(requested).pipe(response);
   } catch {
-    createReadStream(resolve(dist, 'index.html')).pipe(response);
+    const fallback = resolve(dist, 'index.html');
+    response.writeHead(200, { 'content-type': staticContentType(fallback) });
+    createReadStream(fallback).pipe(response);
   }
 }
 
 export async function startServer({ host, port, production = process.argv.includes('--production'), runtimeRoot, allowedOrigins } = {}) {
   const resolvedRuntimeRoot = resolve(runtimeRoot || process.env.REDBOOK_RUNTIME_ROOT || resolve(root, 'data'));
   const resolvedHost = production ? '127.0.0.1' : (host || process.env.HOST || '127.0.0.1');
-  const requestedPort = port ?? (process.env.PORT ? Number(process.env.PORT) : production ? 0 : 5173);
+  const configuredPort = port ?? (process.env.PORT ? Number(process.env.PORT) : production ? 0 : 5173);
+  const requestedPort = production && configuredPort === 0 ? nextDesktopPort() : configuredPort;
   if (!Number.isInteger(requestedPort) || requestedPort < 0 || requestedPort > 65535) throw new TypeError('PORT 必须是 0–65535 的整数');
   const { api } = createApi(resolvedRuntimeRoot);
   // Production policy is bound after listen so the exact ephemeral port is
@@ -79,11 +110,25 @@ export async function startServer({ host, port, production = process.argv.includ
     vite ||= await (await import('vite')).createServer({ configFile: resolve(root, 'apps/web/vite.config.mjs'), server: { middlewareMode: true } });
     return vite.middlewares(request, response);
   });
-  await new Promise((resolvePromise, reject) => {
+  const listen = (candidatePort) => new Promise((resolvePromise, reject) => {
     const onError = (error) => { server.off('listening', onListening); reject(error); };
     const onListening = () => { server.off('error', onError); resolvePromise(); };
-    server.once('error', onError); server.once('listening', onListening); server.listen(requestedPort, resolvedHost);
+    server.once('error', onError); server.once('listening', onListening); server.listen(candidatePort, resolvedHost);
   });
+  let bound = false;
+  let lastError;
+  const attempts = production && configuredPort === 0 ? DESKTOP_PORT_ATTEMPTS : 1;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await listen(attempt === 0 ? requestedPort : nextDesktopPort());
+      bound = true;
+      break;
+    } catch (error) {
+      lastError = error;
+      if (error?.code !== 'EADDRINUSE' || attempt === attempts - 1) throw error;
+    }
+  }
+  if (!bound) throw lastError || new Error('无法绑定本地服务器端口');
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   const url = `http://${resolvedHost}:${actualPort}`;

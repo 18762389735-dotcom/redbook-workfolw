@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
 const path = require('node:path');
-const { XhsSession } = require('./xhs-session.cjs');
+const { XhsSession, isUsableWindow, safeDestroyWindow } = require('./xhs-session.cjs');
 const { ElectronCollector } = require('./electron-collector.cjs');
 const { stopChildProcess } = require('./process-lifecycle.cjs');
 const { sendToWindow } = require('./window-ipc.cjs');
@@ -78,6 +78,48 @@ async function createWorkbench() {
   await workbenchWindow.loadURL(serverUrl);
 }
 
+function smokeRendererLoad() {
+  return new Promise((resolve, reject) => {
+    const target = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    const contents = target.webContents;
+    let settled = false;
+    let closed = false;
+    let timer;
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (!contents.isDestroyed()) {
+        contents.removeListener('did-finish-load', onFinish);
+        contents.removeListener('did-fail-load', onFail);
+        contents.removeListener('render-process-gone', onGone);
+      }
+      if (!closed && !target.isDestroyed()) target.removeListener('closed', onClosed);
+    };
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      safeDestroyWindow(target).finally(() => error ? reject(error) : resolve());
+    };
+    const onFinish = async () => {
+      if (!isUsableWindow(target) || contents.isDestroyed()) return finish(new Error('Renderer window was destroyed before verification'));
+      try {
+        const childCount = await contents.executeJavaScript('document.getElementById("root")?.childElementCount || 0');
+        if (!childCount) throw new Error('Renderer root remained empty after load');
+        finish();
+      } catch (error) { finish(error); }
+    };
+    const onFail = (_event, errorCode, errorDescription, validatedUrl) => finish(new Error(`Renderer load failed (${errorCode}): ${errorDescription} ${validatedUrl || ''}`.trim()));
+    const onGone = (_event, details) => finish(new Error(`Renderer process exited: ${details?.reason || 'unknown'}`));
+    const onClosed = () => { closed = true; finish(new Error('Renderer window closed before verification')); };
+    timer = setTimeout(() => finish(new Error('Renderer load smoke timeout')), 15000);
+    contents.once('did-finish-load', onFinish);
+    contents.once('did-fail-load', onFail);
+    contents.once('render-process-gone', onGone);
+    target.once('closed', onClosed);
+    target.loadURL(serverUrl).catch((error) => finish(error));
+  });
+}
+
 async function main() {
   await app.whenReady();
   await startLocalServer();
@@ -85,7 +127,7 @@ async function main() {
   collector = new ElectronCollector({ xhsSession, serverUrl, runtimeRoot: runtimeRoot(), onTaskChanged: broadcastTask });
   registerIpc();
   if (process.argv.includes('--smoke-test')) {
-    try { await checkSmoke(); await stopLocalServer(); app.exit(0); } catch (error) { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopLocalServer(); app.exit(1); }
+    try { await checkSmoke(); await smokeRendererLoad(); console.log('REDBOOK_DESKTOP_RENDERER_SMOKE_OK'); await stopLocalServer(); app.exit(0); } catch (error) { console.error(`REDBOOK_DESKTOP_SMOKE_FAILED ${error.message}`); await stopLocalServer(); app.exit(1); }
     return;
   }
   await createWorkbench();
