@@ -60,7 +60,33 @@ async function init() {
   startConnectionRefreshLoop();
 
   buttons.primary.addEventListener('click', () => runAction(primaryActionType));
-  buttons.openWorkbench.addEventListener('click', () => void openWorkbench());
+  buttons.openWorkbench.addEventListener('click', () => {
+    const tab = activeTab;
+    if (!tab?.id || !chrome.sidePanel?.open) {
+      showResult('当前浏览器不支持打开侧边栏', 'error');
+      return;
+    }
+
+    // Keep this call synchronous in the user gesture. Any async work before
+    // sidePanel.open() can cause Chrome to drop the popup click activation.
+    let openPromise;
+    try {
+      openPromise = chrome.sidePanel.open({ tabId: tab.id });
+    } catch (error) {
+      showResult(error instanceof Error ? error.message : String(error), 'error');
+      return;
+    }
+
+    buttons.openWorkbench.disabled = true;
+    Promise.resolve(openPromise)
+      .then(() => window.close())
+      .catch((error) => {
+        showResult(error instanceof Error ? error.message : String(error), 'error');
+      })
+      .finally(() => {
+        buttons.openWorkbench.disabled = false;
+      });
+  });
   buttons.openSettings.addEventListener('click', () => chrome.runtime.openOptionsPage());
   buttons.checkUpdate.addEventListener('click', () => void runUpdateCheck());
   buttons.openUpdateSource.addEventListener('click', () => void openUpdateSource());
@@ -230,21 +256,6 @@ async function openUpdateSource() {
     await sendMessage({ type: 'plugin-update:open-source' });
   } finally {
     buttons.openUpdateSource.disabled = false;
-  }
-}
-
-async function openWorkbench() {
-  buttons.openWorkbench.disabled = true;
-  try {
-    const response = await sendMessage({ type: 'sidepanel:open' });
-    if (!response?.success) {
-      throw new Error(response?.error || '无法打开 Redbook 工作台');
-    }
-    window.close();
-  } catch (error) {
-    showResult(error instanceof Error ? error.message : String(error), 'error');
-  } finally {
-    buttons.openWorkbench.disabled = false;
   }
 }
 
