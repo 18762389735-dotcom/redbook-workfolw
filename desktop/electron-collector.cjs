@@ -1,6 +1,7 @@
 const { join } = require('node:path');
 const { isUsableWindow, safeWindowUrl, safeDestroyWindow } = require('./xhs-session.cjs');
 const { executePageFunction, sanitizeDiagnosticText } = require('./page-execution.cjs');
+const { normalizeOverlayClick } = require('./redbook-xhs-overlay-policy.cjs');
 
 const now = () => new Date().toISOString();
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -19,6 +20,37 @@ const profileEvidenceSummary = (evidence) => {
   ].join(', ');
 };
 const isProfileRecognitionFailure = (error) => error?.stage === 'page-function' && /当前页面未识别到可验证的博主公开资料/.test(error.message || '');
+
+// Executed in XHS Main World only. It reads the three known public state
+// branches and a scalar identity/display field; it never serializes the state.
+function inspectClickedXhsProfileState(expectedProfileId) {
+  const expected = String(expectedProfileId || '').trim();
+  const unwrap = (value) => value?._rawValue && typeof value._rawValue === 'object' ? value._rawValue : value?.value && typeof value.value === 'object' ? value.value : value;
+  const readState = () => {
+    if (window.__INITIAL_STATE__ && typeof window.__INITIAL_STATE__ === 'object') return window.__INITIAL_STATE__;
+    for (const script of document.scripts || []) {
+      const text = script.textContent || '';
+      if (!text.includes('window.__INITIAL_STATE__=')) continue;
+      try { return JSON.parse(text.replace('window.__INITIAL_STATE__=', '').replace(/undefined/g, 'null').replace(/;$/, '')); } catch { return null; }
+    }
+    return null;
+  };
+  const state = readState();
+  const branches = [
+    ['user.userPageData', state?.user?.userPageData],
+    ['user.profile', state?.user?.profile],
+    ['user.userInfo', state?.user?.userInfo],
+  ];
+  for (const [branch, value] of branches) {
+    const raw = unwrap(value);
+    if (!raw || typeof raw !== 'object') continue;
+    const basic = raw.basic_info || raw.basicInfo || raw;
+    const userId = String(raw.userId || raw.user_id || raw.id || basic.userId || basic.user_id || '').trim();
+    if (!userId || userId !== expected) continue;
+    return { confirmed: true, stateBranch: branch, stateUserId: userId, nickname: String(raw.nickname || raw.nickName || basic.nickname || basic.nickName || '').trim() || null };
+  }
+  return { confirmed: false };
+}
 
 class ElectronCollector {
   constructor({ xhsSession, serverUrl, runtimeRoot, onTaskChanged } = {}) {
@@ -156,6 +188,45 @@ class ElectronCollector {
       const raw = await this.page(window, beavRuntime.extractXhsBloggerPayload, [], 'beav-current-creator');
       const source = { provider: 'beav-derived-electron-session', method: 'creator-profile', taskId: task.id, capturedAt: now() };
       const input = beavAdapter.beavCreatorPayloadToCreatorInput(raw, source);
+      const normalized = creator.normalizeXiaohongshuCreator(input, source);
+      const result = await this.post('/api/creators/ingest', { creators: [normalized] });
+      await this.updateTask(task.id, { status: 'completed', completedAt: now(), progress: { current: 1, total: 1 }, result, creator: normalized });
+      return { task: await (await this.taskStore()).get(task.id), result, creator: normalized };
+    } catch (error) {
+      const failed = await this.updateTask(task.id, { status: 'failed', completedAt: now(), error: error.message || String(error) });
+      throw Object.assign(new Error(error.message || String(error)), { task: failed });
+    }
+  }
+
+  async confirmBeavOverlayProfile(payload = {}) {
+    const window = this.xhsSession.getWindow();
+    const pageUrl = safeWindowUrl(window);
+    const click = normalizeOverlayClick(payload);
+    if (!window || !pageUrl || !click) return { confirmed: false, reason: 'profile-click-context-expired' };
+    const { profileId, pathname } = click;
+    if (!/^\/search_result(?:_ai)?\/?$/i.test(new URL(pageUrl).pathname)) return { confirmed: false, reason: 'not-search-profile-overlay' };
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const evidence = await this.page(window, inspectClickedXhsProfileState, [profileId], 'beav-overlay-profile-state');
+      if (evidence?.confirmed === true) return { confirmed: true, profileId, pathname, nickname: evidence.nickname || null, confirmedAt: now() };
+      if (attempt < 9) await sleep(100);
+    }
+    return { confirmed: false, reason: 'clicked-profile-id-state-mismatch' };
+  }
+
+  async collectBeavConfirmedCreator(profileId) {
+    const window = this.xhsSession.getWindow();
+    const pageUrl = safeWindowUrl(window);
+    const expected = String(profileId || '').trim();
+    if (!pageUrl || !/^[A-Za-z0-9_-]+$/.test(expected)) throw new Error('已确认的博主上下文无效');
+    if (!/^\/search_result(?:_ai)?\/?$/i.test(new URL(pageUrl).pathname)) throw new Error('博主资料层已离开搜索页面，请重新点击博主');
+    const [{ creator, beavRuntime, beavAdapter }] = [await this.modulesPromise];
+    const task = await this.createTask('creator-profile', 1);
+    try {
+      await this.updateTask(task.id, { status: 'running', startedAt: now() });
+      const raw = await this.page(window, beavRuntime.extractXhsBloggerPayload, [expected], 'beav-confirmed-creator');
+      const source = { provider: 'beav-derived-electron-session', method: 'creator-profile', taskId: task.id, capturedAt: now() };
+      const input = beavAdapter.beavCreatorPayloadToCreatorInput(raw, source);
+      if (input.userId !== expected) throw new Error('Beav creator payload identity mismatch');
       const normalized = creator.normalizeXiaohongshuCreator(input, source);
       const result = await this.post('/api/creators/ingest', { creators: [normalized] });
       await this.updateTask(task.id, { status: 'completed', completedAt: now(), progress: { current: 1, total: 1 }, result, creator: normalized });

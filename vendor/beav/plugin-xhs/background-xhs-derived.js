@@ -5,6 +5,8 @@
  * License: MIT License - Non-Commercial Use Only
  * Modification: extracted XHS-only page payload functions. No Chrome, Knowledge,
  * Native Host, account-import, or desktop-bridge execution is included.
+ * Redbook addition: allow explicitly user-bound search profile overlay context
+ * when observed clicked profile ID equals canonical XHS state user ID.
  */
 
 async function extractXhsNotePayload() {
@@ -841,7 +843,7 @@ async function extractXhsNotePayload() {
 }
 
 
-function extractXhsBloggerPayload() {
+function extractXhsBloggerPayload(expectedProfileId = '') {
   function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
@@ -908,12 +910,19 @@ function extractXhsBloggerPayload() {
     );
   }
 
-  const userId = normalizeText(location.pathname.split('/').filter(Boolean).pop() || '');
   const initialState = getInitialState();
   const stateUser = unwrapValue(initialState?.user?.userPageData)
     || unwrapValue(initialState?.user?.profile)
     || unwrapValue(initialState?.user?.userInfo)
     || {};
+  const stateBasic = stateUser?.basic_info || stateUser?.basicInfo || stateUser;
+  const stateUserId = normalizeText(stateUser.userId || stateUser.user_id || stateUser.id || stateBasic?.userId || stateBasic?.user_id);
+  const expected = normalizeText(expectedProfileId);
+  const isSearchOverlay = /^\/search_result(?:_ai)?\/?$/i.test(String(location.pathname || ''));
+  if (isSearchOverlay && (!expected || stateUserId !== expected)) {
+    throw new Error('Beav creator payload rejected: clicked profile ID does not match canonical XHS state user ID');
+  }
+  const userId = stateUserId || normalizeText(location.pathname.split('/').filter(Boolean).pop() || '');
   const profileRoot =
     document.querySelector('.user-page')
     || document.querySelector('.user-info')

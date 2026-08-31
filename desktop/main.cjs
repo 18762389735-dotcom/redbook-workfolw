@@ -7,6 +7,7 @@ const { ElectronCollector } = require('./electron-collector.cjs');
 const { stopChildProcess } = require('./process-lifecycle.cjs');
 const { sendToWindow } = require('./window-ipc.cjs');
 const { pageShimSource } = require('./beav-extension-adapter.cjs');
+const { loadRedbookXhsOverlayCompanionSource } = require('./beav-source-loader.cjs');
 
 let serverProcess;
 let serverUrl;
@@ -60,16 +61,24 @@ async function stopLocalServer() {
 
 function broadcastTask(task) { if (task) sendToWindow(workbenchWindow, 'desktop:collector-task-changed', task); }
 function registerIpc() {
-  ipcMain.on('desktop:beav-xhs-sources-sync', (event) => { event.returnValue = xhsSession?.ownsWebContents(event.sender) ? beavXhsSources() : null; });
+  ipcMain.on('desktop:beav-xhs-sources-sync', (event) => {
+    if (!xhsSession?.ownsWebContents(event.sender)) { event.returnValue = null; return; }
+    event.returnValue = { ...beavXhsSources(), overlayCompanion: loadRedbookXhsOverlayCompanionSource() };
+  });
   ipcMain.handle('desktop:open-xhs', () => xhsSession.open());
   ipcMain.handle('desktop:xhs-status', () => xhsSession.status());
   ipcMain.handle('desktop:collect-visible', () => collector.collectVisible());
   ipcMain.handle('desktop:collect-creator', () => collector.collectCreator());
-  ipcMain.handle('desktop:beav-xhs-collector-action', (event, action) => {
+  ipcMain.handle('desktop:beav-xhs-collector-action', (event, action, payload) => {
     if (!isOwnedXhsSender(event.sender)) throw new Error('只允许小红书会话调用采集器');
     if (action === 'save-xhs') return collector.collectBeavCurrentNote();
     if (action === 'xhs:collect-current-blogger') return collector.collectBeavCurrentCreator();
+    if (action === 'redbook:xhs:collect-confirmed-creator') return collector.collectBeavConfirmedCreator(payload?.profileId);
     throw new Error('不支持的 Beav XHS 采集消息');
+  });
+  ipcMain.handle('desktop:beav-xhs-profile-click', (event, payload) => {
+    if (!isOwnedXhsSender(event.sender)) throw new Error('只允许小红书会话绑定博主');
+    return collector.confirmBeavOverlayProfile(payload);
   });
   ipcMain.handle('desktop:collect-creator-baseline', (_event, limit) => collector.collectCreatorBaseline(limit));
   ipcMain.handle('desktop:cancel-collector-task', (_event, taskId) => collector.cancel(taskId));

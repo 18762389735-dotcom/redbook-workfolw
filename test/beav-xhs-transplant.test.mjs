@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -8,6 +10,10 @@ import { normalizeXiaohongshuSignal } from '../providers/xiaohongshu/normalize.m
 import { normalizeXiaohongshuCreator } from '../providers/xiaohongshu/normalize-creator.mjs';
 import { beavNotePayloadToSignalInput, beavCreatorPayloadToCreatorInput } from '../vendor/beav/plugin-xhs/redbook-payload-adapter.js';
 import { allowedCollectorMessage, COLLECTOR_MESSAGE_TYPES, pageShimSource } from '../desktop/beav-extension-adapter.cjs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { loadRedbookXhsOverlayCompanionSource } = require('../desktop/beav-source-loader.cjs');
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const pluginRoot = resolve(root, 'vendor/beav/plugin-xhs');
@@ -18,6 +24,32 @@ test('Beav byte-identical files match the recorded donor hashes', async () => {
     const bytes = await readFile(resolve(pluginRoot, entry.targetPath));
     const actual = createHash('sha256').update(bytes).digest('hex').toUpperCase();
     assert.equal(actual, entry.donorSha256, entry.targetPath);
+  }
+});
+
+test('Redbook overlay companion uses an independent source loader', async () => {
+  const source = loadRedbookXhsOverlayCompanionSource(resolve(root, 'desktop'));
+  assert.match(source, /redbook-collector-overlay-companion/);
+  assert.equal(await readFile(resolve(root, 'desktop', 'redbook-xhs-overlay-companion.js'), 'utf8'), source);
+});
+
+test('packaged source layout keeps the Redbook companion beside desktop main', async () => {
+  const desktopSource = resolve(root, 'desktop', 'redbook-xhs-overlay-companion.js');
+  assert.equal((await readFile(desktopSource, 'utf8')).length > 0, true);
+  assert.equal((await readFile(resolve(root, 'package.json'), 'utf8')).includes('"desktop/**/*"'), true);
+});
+
+test('Redbook companion is outside the Beav SOURCE_MANIFEST', async () => {
+  const manifest = JSON.parse(await readFile(resolve(pluginRoot, 'SOURCE_MANIFEST.json'), 'utf8'));
+  assert.equal(manifest.files.some((item) => item.targetPath.includes('redbook-xhs-overlay-companion')), false);
+});
+
+test('missing Redbook companion reports Redbook-owned source error', async () => {
+  const temp = await mkdtemp(resolve(tmpdir(), 'redbook-companion-loader-'));
+  try {
+    assert.throws(() => loadRedbookXhsOverlayCompanionSource(temp), /Redbook XHS overlay companion source not found/);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
   }
 });
 
@@ -47,10 +79,11 @@ test('Beav-shaped creator payload requires donor-derived canonical userId', () =
 });
 
 test('Electron Beav shim has a fixed collector message allowlist and no generic invoke surface', async () => {
-  assert.deepEqual(COLLECTOR_MESSAGE_TYPES, ['save-xhs', 'xhs:collect-current-blogger']);
+  assert.deepEqual(COLLECTOR_MESSAGE_TYPES, ['save-xhs', 'xhs:collect-current-blogger', 'redbook:xhs:collect-confirmed-creator']);
   assert.equal(allowedCollectorMessage({ type: 'save-xhs' }), true);
   assert.equal(allowedCollectorMessage({ type: 'xhs:collect-current-blogger' }), true);
   assert.equal(allowedCollectorMessage({ type: 'xhs:collect-blogger-notes' }), false);
+  assert.equal(allowedCollectorMessage({ type: 'redbook:xhs:collect-confirmed-creator', payload: { profileId: 'p1' } }), true);
   assert.equal(allowedCollectorMessage({ type: 'fs:read' }), false);
   const shim = pageShimSource();
   assert.doesNotMatch(shim, /\b(?:require|child_process|ipcRenderer|process)\b/);

@@ -9,6 +9,7 @@ const PAGE_RESPONSE_EVENT = 'redbook:beav-xhs-response';
 const COLLECTOR_MESSAGE_TYPES = Object.freeze([
   'save-xhs',
   'xhs:collect-current-blogger',
+  'redbook:xhs:collect-confirmed-creator',
 ]);
 
 function allowedCollectorMessage(message) {
