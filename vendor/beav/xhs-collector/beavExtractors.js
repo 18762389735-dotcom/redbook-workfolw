@@ -4,8 +4,9 @@
  * Upstream: https://github.com/Jamailar/Beav
  * License: ../LICENSE (MIT License - Non-Commercial Use Only).
  * Local changes: limit baseline collection to 12 by default / 20 maximum,
- * preserve unknown metrics as null, retain only observed DOM/API URLs, and
- * remove all unrelated Desktop/RedClaw integration.
+ * preserve unknown metrics as null, retain only observed DOM/API URLs,
+ * recognize an observed profile state rendered without a /user/profile/ URL,
+ * and remove all unrelated Desktop/RedClaw integration.
  */
 
 export function extractVisibleContext() {
@@ -102,7 +103,6 @@ export function extractXhsBloggerPayload() {
     }
     return null;
   };
-  if (!/^\/user\/profile\//i.test(location.pathname)) throw new Error('当前页面不是小红书博主页');
   const state = readState();
   const raw = unwrap(state?.user?.userPageData) || unwrap(state?.user?.profile) || unwrap(state?.user?.userInfo) || {};
   const basic = raw.basic_info || raw.basicInfo || raw;
@@ -115,7 +115,11 @@ export function extractXhsBloggerPayload() {
     }
     return null;
   };
-  const userId = normalizeText(raw.userId || raw.user_id || raw.id || basic.userId || basic.user_id || location.pathname.split('/').filter(Boolean).pop());
+  const pathUserId = location.pathname.match(/^\/user\/profile\/([^/?#]+)/i)?.[1] || '';
+  const stateUserId = normalizeText(raw.userId || raw.user_id || raw.id || basic.userId || basic.user_id);
+  const profileEvidence = Boolean(stateUserId && /(关注|粉丝|获赞与收藏|获赞)/.test(pageText));
+  if (!pathUserId && !profileEvidence) throw new Error('当前页面未识别到可验证的博主公开资料');
+  const userId = stateUserId || normalizeText(pathUserId);
   if (!userId) throw new Error('未识别到小红书博主 ID');
   return {
     userId,
@@ -155,10 +159,13 @@ export async function extractXhsBloggerNotesPayload(limitInput = 12, modeInput =
   const rawProfile = unwrap(state?.user?.userPageData) || unwrap(state?.user?.profile) || unwrap(state?.user?.userInfo) || {};
   const basic = rawProfile.basic_info || rawProfile.basicInfo || rawProfile;
   const profile = {
-    userId: normalizeText(rawProfile.userId || rawProfile.user_id || rawProfile.id || basic.userId || basic.user_id || location.pathname.split('/').filter(Boolean).pop()),
+    userId: normalizeText(rawProfile.userId || rawProfile.user_id || rawProfile.id || basic.userId || basic.user_id || location.pathname.match(/^\/user\/profile\/([^/?#]+)/i)?.[1]),
     nickname: normalizeText(rawProfile.nickname || rawProfile.nickName || basic.nickname || basic.nickName || document.title.replace(/小红书.*/i, '')),
   };
-  if (!/^\/user\/profile\//i.test(location.pathname)) throw new Error('当前页面不是小红书博主页');
+  const root = document.querySelector('.user-page, .user-info, [class*="user-info"], [class*="profile"]') || document.body;
+  const pageText = normalizeText(root.innerText || root.textContent);
+  const profilePath = /^\/user\/profile\//i.test(location.pathname);
+  if (!profilePath && !(profile.userId && /(关注|粉丝|获赞与收藏|获赞)/.test(pageText))) throw new Error('当前页面未识别到可验证的博主公开资料');
   if (!profile.userId) throw new Error('未识别到小红书博主 ID');
 
   const notes = [];

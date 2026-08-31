@@ -77,7 +77,7 @@ class ElectronCollector {
     const window = this.xhsSession.getWindow();
     if (!window) throw new Error('请先点击“打开小红书”');
     const profileUrl = safeWindowUrl(window);
-    if (!profileUrl || !/^https:\/\/(www\.)?(xiaohongshu\.com|rednote\.com)\/user\/profile\//i.test(profileUrl)) throw new Error('请在小红书会话中打开博主主页');
+    if (!profileUrl || !/^https:\/\/(www\.)?(xiaohongshu\.com|rednote\.com)\//i.test(profileUrl)) throw new Error('请在小红书会话中打开博主主页');
     const [{ creator, extractors, payload }] = [await this.modulesPromise];
     const task = await this.createTask('creator-profile', 1);
     try {
@@ -98,7 +98,7 @@ class ElectronCollector {
     const window = this.xhsSession.getWindow();
     if (!window) throw new Error('请先点击“打开小红书”');
     const profileUrl = safeWindowUrl(window);
-    if (!profileUrl || !/^https:\/\/(www\.)?(xiaohongshu\.com|rednote\.com)\/user\/profile\//i.test(profileUrl)) throw new Error('请在小红书会话中打开博主主页');
+    if (!profileUrl || !/^https:\/\/(www\.)?(xiaohongshu\.com|rednote\.com)\//i.test(profileUrl)) throw new Error('请在小红书会话中打开博主主页');
     const limit = Math.min(20, Math.max(1, Math.round(Number(limitInput) || 12)));
     const [{ extractors, payload, signal }] = [await this.modulesPromise];
     const task = await this.createTask('creator-baseline', limit);
