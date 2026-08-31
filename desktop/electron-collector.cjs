@@ -111,7 +111,8 @@ class ElectronCollector {
         throw diagnostic;
       }
       const source = { provider: 'beav-derived-electron-session', method: 'creator-profile', taskId: task.id, capturedAt: now() };
-      const normalized = creator.normalizeXiaohongshuCreator(payload.buildCreatorSignalPayload(raw, { profileUrl, taskId: task.id, capturedAt: source.capturedAt }), source);
+      const canonicalProfileUrl = raw.profileUrl || profileUrl;
+      const normalized = creator.normalizeXiaohongshuCreator(payload.buildCreatorSignalPayload(raw, { profileUrl: canonicalProfileUrl, taskId: task.id, capturedAt: source.capturedAt }), source);
       const result = await this.post('/api/creators/ingest', { creators: [normalized] });
       await this.updateTask(task.id, { status: 'completed', completedAt: now(), progress: { current: 1, total: 1 }, result, creator: normalized });
       return { task: await (await this.taskStore()).get(task.id), result, creator: normalized };

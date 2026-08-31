@@ -179,10 +179,84 @@ export function extractXhsBloggerPayload() {
     }
     return null;
   };
+  const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const hasExactNickname = (text, nickname) => new RegExp(`(^|[\\s\\p{P}])${escapeRegex(nickname)}(?=$|[\\s\\p{P}])`, 'u').test(text);
+  const isVisible = (element) => {
+    if (!element?.isConnected) return false;
+    const bounds = element.getBoundingClientRect?.();
+    if (!bounds || bounds.width <= 0 || bounds.height <= 0) return false;
+    const style = getComputedStyle(element);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const profileBranches = (state) => [
+    ['user.userPageData', state?.user?.userPageData],
+    ['user.profile', state?.user?.profile],
+    ['user.userInfo', state?.user?.userInfo],
+  ].map(([branch, value]) => {
+    const raw = unwrap(value);
+    const basic = raw?.basic_info || raw?.basicInfo || raw || {};
+    return {
+      branch,
+      raw: raw || {},
+      basic,
+      userId: normalizeText(raw?.userId || raw?.user_id || raw?.id || basic.userId || basic.user_id),
+      nickname: normalizeText(raw?.nickname || raw?.nickName || basic.nickname || basic.nickName),
+    };
+  });
+  const verifySearchOverlay = (state) => {
+    const candidates = profileBranches(state).filter((candidate) => candidate.userId);
+    if (!candidates.length) throw new Error('当前页面未识别到可验证的博主公开资料: overlay-state-id-missing');
+    const anchors = [];
+    for (const anchor of document.querySelectorAll('a[href]')) {
+      if (!isVisible(anchor)) continue;
+      let observed;
+      try { observed = new URL(anchor.getAttribute('href') || '', location.origin); } catch { continue; }
+      if (!/(^|\.)(xiaohongshu\.com|rednote\.com)$/i.test(observed.hostname)) continue;
+      const match = observed.pathname.match(/^\/user\/profile\/([^/?#]+)/i);
+      if (!match?.[1]) continue;
+      anchors.push({ anchor, profileId: match[1], profileUrl: new URL(observed.pathname, observed.origin).toString() });
+    }
+    const matches = anchors.flatMap((link) => candidates.filter((candidate) => candidate.userId === link.profileId).map((candidate) => ({ ...link, candidate })));
+    if (!matches.length) throw new Error('当前页面未识别到可验证的博主公开资料: overlay-profile-link-mismatch');
+    const regions = new Map();
+    let nicknameSeen = false;
+    for (const match of matches) {
+      if (!match.candidate.nickname) continue;
+      let node = match.anchor;
+      let region = null;
+      for (let level = 0; node && level < 8; level += 1, node = node.parentElement) {
+        if (node === document.body || node === document.documentElement) break;
+        const text = normalizeText(node.innerText || node.textContent).slice(0, 2000);
+        if (!hasExactNickname(text, match.candidate.nickname)) continue;
+        nicknameSeen = true;
+        if (!/(小红书号|关注|粉丝|获赞与收藏|获赞)/.test(text)) continue;
+        region = node;
+        break;
+      }
+      if (!region) continue;
+      const previous = regions.get(region);
+      if (previous && previous.candidate.userId !== match.candidate.userId) throw new Error('当前页面存在多个候选博主资料区域，无法安全绑定身份: overlay-ambiguous');
+      regions.set(region, { ...match, region });
+    }
+    if (!regions.size) {
+      const reason = nicknameSeen ? 'overlay-profile-marker-missing' : 'overlay-nickname-mismatch';
+      throw new Error(`当前页面未识别到可验证的博主公开资料: ${reason}`);
+    }
+    if (regions.size !== 1) throw new Error('当前页面存在多个候选博主资料区域，无法安全绑定身份: overlay-ambiguous');
+    return [...regions.values()][0];
+  };
   const state = readState();
-  const raw = unwrap(state?.user?.userPageData) || unwrap(state?.user?.profile) || unwrap(state?.user?.userInfo) || {};
-  const basic = raw.basic_info || raw.basicInfo || raw;
-  const root = document.querySelector('.user-page, .user-info, [class*="user-info"], [class*="profile"]') || document.body;
+  const pathUserId = location.pathname.match(/^\/user\/profile\/([^/?#]+)/i)?.[1] || '';
+  const isSearchOverlay = /^\/search_result(?:_ai)?\/?$/i.test(location.pathname);
+  let overlay = null;
+  if (!pathUserId) {
+    if (!isSearchOverlay) throw new Error('当前页面未识别到可验证的博主公开资料');
+    overlay = verifySearchOverlay(state);
+  }
+  const fallbackProfile = profileBranches(state).find((candidate) => candidate.raw && Object.keys(candidate.raw).length) || { raw: {}, basic: {} };
+  const raw = overlay?.candidate.raw || fallbackProfile.raw;
+  const basic = overlay?.candidate.basic || fallbackProfile.basic;
+  const root = overlay?.region || document.querySelector('.user-page, .user-info, [class*="user-info"], [class*="profile"]') || document.body;
   const pageText = normalizeText(root.innerText || root.textContent);
   const matchCount = (labels) => {
     for (const label of labels) {
@@ -191,12 +265,12 @@ export function extractXhsBloggerPayload() {
     }
     return null;
   };
-  const pathUserId = location.pathname.match(/^\/user\/profile\/([^/?#]+)/i)?.[1] || '';
-  const stateUserId = normalizeText(raw.userId || raw.user_id || raw.id || basic.userId || basic.user_id);
-  const profileEvidence = Boolean(stateUserId && /(关注|粉丝|获赞与收藏|获赞)/.test(pageText));
-  if (!pathUserId && !profileEvidence) throw new Error('当前页面未识别到可验证的博主公开资料');
-  const userId = stateUserId || normalizeText(pathUserId);
+  const userId = normalizeText(pathUserId) || overlay?.candidate.userId || '';
   if (!userId) throw new Error('未识别到小红书博主 ID');
+  const profileUrl = pathUserId
+    ? new URL(`/user/profile/${encodeURIComponent(pathUserId)}`, location.origin).toString()
+    : overlay.profileUrl;
+  const source = new URL(location.pathname, location.origin).toString();
   return {
     userId,
     nickname: normalizeText(raw.nickname || raw.nickName || basic.nickname || basic.nickName || document.querySelector('.user-name, [class*="user-name"], [class*="nickname"]')?.textContent || document.title.replace(/小红书.*/i, '')),
@@ -207,7 +281,8 @@ export function extractXhsBloggerPayload() {
       follows: parseCountText(raw.follows ?? raw.followingCount ?? basic.follows ?? matchCount(['关注'])),
       liked: parseCountText(raw.liked ?? raw.likedCount ?? basic.liked ?? matchCount(['获赞与收藏', '获赞'])),
     },
-    source: location.href,
+    profileUrl,
+    source,
   };
 }
 

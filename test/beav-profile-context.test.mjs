@@ -18,15 +18,16 @@ function installPage({ pathname = '/explore/observed-note', profile = null, page
   return () => Object.assign(globalThis, previous);
 }
 
-test('observed public profile state can be collected when XHS renders it over a non-profile URL', async () => {
-  const restore = installPage({ profile: { userId: 'creator-internal-id', nickname: 'is涵', fans: '1836' }, pageText: '942 关注 1836 粉丝 4.2万 获赞与收藏' });
+test('direct profile route keeps its path identity ahead of unrelated state', async () => {
+  const restore = installPage({ pathname: '/user/profile/path-user-id', profile: { userId: 'other-state-id', nickname: 'is涵', fans: '1836' }, pageText: '942 关注 1836 粉丝 4.2万 获赞与收藏' });
   try {
     const creator = extractXhsBloggerPayload();
-    assert.equal(creator.userId, 'creator-internal-id');
+    assert.equal(creator.userId, 'path-user-id');
+    assert.equal(creator.profileUrl, 'https://www.xiaohongshu.com/user/profile/path-user-id');
     assert.equal(creator.nickname, 'is涵');
-    assert.equal(creator.source, 'https://www.xiaohongshu.com/explore/observed-note');
+    assert.equal(creator.source, 'https://www.xiaohongshu.com/user/profile/path-user-id');
     const baseline = await extractXhsBloggerNotesPayload(12, 'rpa');
-    assert.equal(baseline.userId, 'creator-internal-id');
+    assert.equal(baseline.userId, 'other-state-id');
     assert.deepEqual(baseline.notes, []);
   } finally { restore(); }
 });
