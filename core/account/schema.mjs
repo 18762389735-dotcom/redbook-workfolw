@@ -36,9 +36,11 @@ export function normalizeXhsAccountFacts(input = {}, now = new Date().toISOStrin
   const tags = sanitizeList(input.publicTags || input.tags);
   const school = text(input.school);
   if (school && !tags.includes(school)) tags.push(school);
+  const userId = text(input.userId || input.canonicalUserId || input.canonical_user_id || input.user_id);
   return {
+    userId,
     accountName: text(input.accountName || input.nickname || input.name),
-    xhsId: text(input.xhsId || input.userId || input.user_id),
+    xhsId: text(input.xhsId || input.xhs_id || input.redId || input.red_id || input.publicId || input.public_id),
     bio: text(input.bio || input.description || input.desc),
     avatar: safeAssetUrl(input.avatar),
     followers: metric(input.followers ?? input.fans),
@@ -46,7 +48,7 @@ export function normalizeXhsAccountFacts(input = {}, now = new Date().toISOStrin
     likesAndCollects: metric(input.likesAndCollects ?? input.liked),
     school: school || null,
     publicTags: tags,
-    profileUrl: safeUrl(input.profileUrl),
+    profileUrl: userId ? `https://www.xiaohongshu.com/user/profile/${encodeURIComponent(userId)}` : safeUrl(input.profileUrl),
     syncedAt: text(input.syncedAt) || now,
     source: 'xhs_profile',
     type: 'fact',
@@ -76,6 +78,7 @@ export function normalizeRecentContent(notes = [], syncedAt = new Date().toISOSt
 export function emptyAccountProfile() {
   return {
     version: 1,
+    userId: '',
     displayName: '',
     positioning: '',
     niche: '',
@@ -107,6 +110,7 @@ export function createAccountProfile(input = {}, now = new Date().toISOString())
   const current = input.currentContext || {};
   const profile = {
     ...emptyAccountProfile(),
+    userId: text(input.userId || input.facts?.userId),
     displayName: text(input.displayName),
     positioning: text(input.positioning),
     niche: text(input.niche),

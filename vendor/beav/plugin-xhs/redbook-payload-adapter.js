@@ -56,8 +56,12 @@ export function beavCreatorPayloadToCreatorInput(payload, source) {
 export function beavCreatorPayloadToAccountFacts(payload, source) {
   const creator = beavCreatorPayloadToCreatorInput(payload, source);
   return {
+    // Keep Beav's canonical internal identity separate from the public
+    // 小红书号 shown on the profile.  The latter is optional in sparse
+    // payloads and must never fall back to the canonical userId.
+    userId: creator.userId,
     accountName: creator.nickname,
-    xhsId: creator.userId,
+    xhsId: text(payload?.xhsId || payload?.xhs_id || payload?.redId || payload?.red_id || payload?.publicId || payload?.public_id),
     bio: creator.description,
     avatar: creator.avatar,
     followers: creator.stats?.fans ?? null,

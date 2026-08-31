@@ -9,11 +9,15 @@ export function createAccountApiHandler(accountStore, { signalStore } = {}) {
       if (request.method === 'POST' && pathname === '/api/account/xhs-sync') {
         const body = await readJsonBody(request);
         if (!body?.facts || typeof body.facts !== 'object') return json(response, 400, { error: '缺少小红书主页公开资料' });
+        const canonicalUserId = String(body.facts.userId || body.facts.canonicalUserId || body.facts.canonical_user_id || body.facts.user_id || '').trim();
         const profile = await accountStore.syncXhsProfile(body.facts, {
           notes: Array.isArray(body.recentNotes)
             ? body.recentNotes
             : signalStore
-              ? (await signalStore.list()).filter((signal) => signal.author?.id && signal.author.id === String(body.facts.xhsId || body.facts.userId || '').trim()).slice(0, 50)
+              ? (await signalStore.list()).filter((signal) => {
+                const authorUserId = String(signal.author?.userId || signal.author?.id || '').trim();
+                return Boolean(canonicalUserId) && authorUserId === canonicalUserId;
+              }).slice(0, 50)
               : [],
         });
         const analyzed = await accountStore.analyzeXhsProfile();

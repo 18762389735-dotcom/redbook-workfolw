@@ -77,7 +77,7 @@ export class AccountStore {
     const previous = this.profile;
     const facts = normalizeXhsAccountFacts(input, now);
     const recentContent = normalizeRecentContent(notes, now);
-    const next = { ...previous, facts, recentContent, updatedAt: now };
+    const next = { ...previous, userId: facts.userId || previous.userId || '', facts, recentContent, updatedAt: now };
     const sources = { ...(previous.fieldSources || {}) };
     const metadata = { ...(previous.fieldMetadata || {}) };
     if (!previous.displayName || sources.displayName !== 'user_confirmed') {

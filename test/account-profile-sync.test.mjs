@@ -8,6 +8,7 @@ import { createSignal } from '../core/signals/schema.mjs';
 import { SignalStore } from '../core/signals/signal-store.mjs';
 import { createAccountApiHandler } from '../server/account-api.mjs';
 import { createBeavConnector } from '../server/beav-connector.mjs';
+import { beavCreatorPayloadToAccountFacts } from '../vendor/beav/plugin-xhs/redbook-payload-adapter.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -21,7 +22,7 @@ async function fixture() {
   const accountStore = new AccountStore(join(folder, 'account.json'));
   const signalStore = new SignalStore(join(folder, 'signals.json'));
   await signalStore.upsertMany([
-    createSignal({ noteId: 'own-1', title: '设计学习效率工具', bodyText: '工具使用经验', author: { id: 'own-123' }, metrics: { likes: 12 }, source: { provider: 'test', method: 'current-note', taskId: 't1' } }),
+    createSignal({ noteId: 'own-1', title: '设计学习效率工具', bodyText: '工具使用经验', author: { id: '5fbf43fa00000000100af2a' }, metrics: { likes: 12 }, source: { provider: 'test', method: 'current-note', taskId: 't1' } }),
     createSignal({ noteId: 'other-1', title: '无关内容', author: { id: 'other-456' }, source: { provider: 'test', method: 'current-note', taskId: 't2' } }),
   ]);
   const handler = createAccountApiHandler(accountStore, { signalStore });
@@ -34,7 +35,7 @@ async function fixture() {
 
 test('XHS account sync stores separated public facts and analyzes only own saved notes', async () => {
   const { baseUrl } = await fixture();
-  const response = await fetch(`${baseUrl}/api/account/xhs-sync`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ facts: { accountName: '努力上岸的南瓜🎃', xhsId: 'own-123', bio: '设计学研1', followers: 1118, following: 113, likesAndCollects: 4943, school: '浙江理工大学', publicTags: ['学习'], profileUrl: 'https://www.xiaohongshu.com/user/profile/own-123' } }) });
+  const response = await fetch(`${baseUrl}/api/account/xhs-sync`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ facts: { userId: '5fbf43fa00000000100af2a', accountName: '努力上岸的南瓜🎃', xhsId: '1045421577', bio: '设计学研1', followers: 1118, following: 113, likesAndCollects: 4943, school: '浙江理工大学', publicTags: ['学习'], profileUrl: 'https://www.xiaohongshu.com/user/profile/own-123' } }) });
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.facts.followers, 1118);
@@ -47,9 +48,57 @@ test('XHS account sync stores separated public facts and analyzes only own saved
   assert.equal(body.profile.fieldSources.positioning, 'ai_profile_analysis');
 });
 
+test('canonical userId and public xhsId stay separate and own signals join by canonical id', async () => {
+  const { baseUrl } = await fixture();
+  const facts = {
+    userId: '5fbf43fa00000000100af2a',
+    xhsId: '1045421577',
+    accountName: '努力上岸的南瓜🎃',
+    followers: 1115,
+    following: 113,
+    likesAndCollects: 4959,
+    profileUrl: 'https://www.xiaohongshu.com/user/profile/should-be-canonical',
+  };
+  const response = await fetch(`${baseUrl}/api/account/xhs-sync`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ facts }) });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.profile.userId, facts.userId);
+  assert.equal(body.facts.userId, facts.userId);
+  assert.equal(body.facts.xhsId, facts.xhsId);
+  assert.equal(body.facts.followers, 1115);
+  assert.equal(body.facts.following, 113);
+  assert.equal(body.facts.likesAndCollects, 4959);
+  assert.equal(body.facts.profileUrl, `https://www.xiaohongshu.com/user/profile/${facts.userId}`);
+  assert.equal(body.profile.recentContent.count, 1);
+});
+
+test('profile mapping accepts canonical and public ids without metric swaps', () => {
+  const facts = beavCreatorPayloadToAccountFacts({
+    userId: '5fbf43fa00000000100af2a',
+    xhsId: '1045421577',
+    nickname: '努力上岸的南瓜🎃',
+    stats: { fans: 1115, follows: 113, liked: 4959 },
+    source: 'https://www.xiaohongshu.com/user/profile/5fbf43fa00000000100af2a',
+  }, { capturedAt: '2026-08-31T00:00:00.000Z' });
+  assert.deepEqual({ userId: facts.userId, xhsId: facts.xhsId, followers: facts.followers, following: facts.following, likesAndCollects: facts.likesAndCollects }, {
+    userId: '5fbf43fa00000000100af2a', xhsId: '1045421577', followers: 1115, following: 113, likesAndCollects: 4959,
+  });
+});
+
+test('resyncing one canonical user updates the single account profile', async () => {
+  const { baseUrl, accountStore } = await fixture();
+  const facts = { userId: '5fbf43fa00000000100af2a', xhsId: '1045421577', accountName: '账号', followers: 1115, following: 113, likesAndCollects: 4959 };
+  await fetch(`${baseUrl}/api/account/xhs-sync`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ facts }) });
+  await fetch(`${baseUrl}/api/account/xhs-sync`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ facts: { ...facts, followers: 1116 } }) });
+  const profile = await accountStore.get();
+  assert.equal(profile.userId, facts.userId);
+  assert.equal(profile.facts.xhsId, facts.xhsId);
+  assert.equal(profile.facts.followers, 1116);
+});
+
 test('XHS resync preserves confirmed profile fields while refreshing facts', async () => {
   const { baseUrl } = await fixture();
-  const facts = { accountName: '账号', xhsId: 'own-123', followers: 100, likesAndCollects: 200, profileUrl: 'https://www.xiaohongshu.com/user/profile/own-123' };
+  const facts = { userId: '5fbf43fa00000000100af2a', accountName: '账号', xhsId: '1045421577', followers: 100, likesAndCollects: 200, profileUrl: 'https://www.xiaohongshu.com/user/profile/own-123' };
   await fetch(`${baseUrl}/api/account/xhs-sync`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ facts }) });
   const confirmed = await (await fetch(`${baseUrl}/api/account`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ positioning: '我确认的定位' }) })).json();
   assert.equal(confirmed.fieldSources.positioning, 'user_confirmed');

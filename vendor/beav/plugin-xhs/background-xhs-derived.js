@@ -958,12 +958,23 @@ function extractXhsBloggerPayload(expectedProfileId = '') {
     '',
   );
   const text = normalizeText(profileRoot.innerText || profileRoot.textContent || '');
-  const fansText = (text.match(/粉丝\s*([0-9.万亿]+)/) || [])[1] || stateUser.fans || stateUser.fansCount || '';
-  const followsText = (text.match(/关注\s*([0-9.万亿]+)/) || [])[1] || stateUser.follows || stateUser.followingCount || '';
-  const likedText = (text.match(/获赞与收藏\s*([0-9.万亿]+)/) || text.match(/获赞\s*([0-9.万亿]+)/) || [])[1] || stateUser.liked || stateUser.likedCount || '';
+  const readMetric = (label) => {
+    const after = text.match(new RegExp(`${label}\\s*[:：]?\\s*([0-9.万亿]+)`));
+    const before = text.match(new RegExp(`([0-9.万亿]+)\\s*${label}`));
+    return after?.[1] || before?.[1] || '';
+  };
+  const fansText = readMetric('粉丝') || stateUser.fans || stateUser.fansCount || stateBasic.fans || stateBasic.fansCount || '';
+  const followsText = readMetric('关注') || stateUser.follows || stateUser.followingCount || stateBasic.follows || stateBasic.followingCount || '';
+  const likedText = readMetric('获赞与收藏') || readMetric('获赞') || stateUser.liked || stateUser.likedCount || stateBasic.liked || stateBasic.likedCount || '';
+  const publicXhsId = normalizeText(
+    stateUser.xhsId || stateUser.xhs_id || stateUser.redId || stateUser.red_id
+    || stateBasic.xhsId || stateBasic.xhs_id || stateBasic.redId || stateBasic.red_id
+    || (text.match(/小红书号\s*[:：]?\s*([A-Za-z0-9_-]+)/i) || [])[1] || '',
+  );
 
   return {
-    userId: normalizeText(stateUser.userId || stateUser.user_id || stateUser.redId || stateUser.red_id || userId),
+    userId: normalizeText(stateUser.userId || stateUser.user_id || stateUser.id || stateBasic.userId || stateBasic.user_id || stateBasic.id || userId),
+    xhsId: publicXhsId,
     nickname,
     description,
     avatar,
