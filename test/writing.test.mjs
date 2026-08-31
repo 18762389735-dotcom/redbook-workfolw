@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, test } from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { buildDraftFromBrief, buildWritingBrief } from '../core/writing/build-draft.mjs';
 import { DraftStore } from '../core/writing/draft-store.mjs';
 import { createWritingApiHandler } from '../server/writing-api.mjs';
@@ -37,6 +38,19 @@ const signal = {
   capturedAt: '2026-08-31T00:00:00.000Z',
   source: { provider: 'beav', method: 'visible-notes' },
 };
+const sparseOpportunity = {
+  id: 'opportunity:sparse-signal',
+  title: '只有一条真实 Signal 的观察机会',
+  decisionStatus: 'OBSERVE',
+  confidence: 'low',
+  whyNow: ['单条真实素材已经进入工作台。'],
+  evidenceSignalIds: ['xiaohongshu:n1'],
+  accountFit: null,
+  cluster: null,
+  baseline: null,
+  missingEvidence: ['cross_author_cluster', 'account_profile'],
+  userState: 'selected',
+};
 
 afterEach(async () => Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true }))));
 
@@ -49,6 +63,26 @@ test('brief and draft retain real Opportunity evidence and editable content', ()
   assert.equal(brief.structure.length, 5);
   assert.match(draft.body, /我的 AI 工作流/);
   assert.equal(draft.references[0], signal.id);
+});
+
+test('signal-only Opportunity stays sparse-safe and preserves low-confidence evidence limits', () => {
+  const brief = buildWritingBrief({ opportunity: sparseOpportunity, signals: [signal], accountProfile: null, now: '2026-08-31T00:00:00.000Z' });
+  const draft = buildDraftFromBrief(brief, '2026-08-31T00:00:00.000Z');
+  assert.equal(brief.confidence, 'low');
+  assert.equal(brief.accountFit.status, 'unknown');
+  assert.deepEqual(brief.missingEvidence, ['cross_author_cluster', 'account_profile']);
+  assert.equal(brief.evidence.length, 1);
+  assert.equal(brief.titleCandidates.length, 5);
+  assert.equal(brief.structure.length, 5);
+  assert.equal(draft.references.length, 1);
+  assert.match(draft.body, /当前 Signal/);
+});
+
+test('buildDraftFromBrief accepts a minimal sparse brief without optional arrays', () => {
+  const draft = buildDraftFromBrief({ opportunityId: 'opportunity:minimal', topic: '稀疏机会' });
+  assert.equal(draft.title, '稀疏机会');
+  assert.deepEqual(draft.references, []);
+  assert.match(draft.body, /没有可引用的 Signal/);
 });
 
 test('DraftStore writes, reloads, and updates one opportunity draft', async () => {
@@ -107,4 +141,36 @@ test('Writing API refuses to draft an unselected Opportunity', async () => {
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
+});
+
+test('Writing API creates and reopens a sparse signal-only draft idempotently', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'writing-sparse-api-'));
+  folders.push(folder);
+  const draftStore = new DraftStore(join(folder, 'drafts.json'));
+  const handler = createWritingApiHandler({ draftStore }, async () => ({ opportunities: [sparseOpportunity], signals: [signal], accountProfile: null }));
+  const server = createServer((request, response) => handler(request, response));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/api/writing/drafts`;
+    const first = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ opportunityId: sparseOpportunity.id }) });
+    assert.equal(first.status, 201);
+    const firstPayload = await first.json();
+    assert.equal(firstPayload.draft.brief.confidence, 'low');
+    assert.equal(firstPayload.draft.brief.accountFit.status, 'unknown');
+    assert.equal(firstPayload.draft.brief.titleCandidates.length, 5);
+    assert.equal(firstPayload.draft.brief.structure.length, 5);
+    assert.equal(firstPayload.draft.references.length, 1);
+    const second = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ opportunityId: sparseOpportunity.id }) });
+    assert.equal(second.status, 200);
+    assert.equal((await second.json()).draft.id, firstPayload.draft.id);
+    assert.equal((await new DraftStore(join(folder, 'drafts.json')).list()).length, 1);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test('Writing evidence renderer reads the metric key it filtered', async () => {
+  const source = await readFile(new URL('../apps/web/src/pages/WritingSelectionPage.jsx', import.meta.url), 'utf8');
+  assert.match(source, /\.filter\(\(\[key\]\) => Number\.isFinite\(signal\.metrics\?\.\[key\]\)\)\.map\(\(\[key, label\]\)/);
+  assert.doesNotMatch(source, /\.filter\(\(\[key\]\][\s\S]{0,180}\.map\(\(\[, label\]\).*signal\.metrics\[key\]/);
 });

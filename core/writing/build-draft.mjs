@@ -52,10 +52,11 @@ function metricSummary(metrics = {}) {
 
 export function buildWritingBrief({ opportunity, signals = [], accountProfile = {}, now = new Date() } = {}) {
   if (!opportunity?.id) throw new TypeError('Opportunity 是必填字段');
-  const signalById = new Map(signals.map((signal) => [signal.id, signal]));
+  const signalById = new Map((Array.isArray(signals) ? signals : []).map((signal) => [signal.id, signal]));
+  const profile = accountProfile && typeof accountProfile === 'object' ? accountProfile : {};
   const evidence = list(opportunity.evidenceSignalIds).map((id) => signalById.get(id)).filter(Boolean).map(evidenceView);
-  const audience = text(accountProfile.targetAudience) || text(accountProfile.niche) || '目标受众尚未在账号资料中确认';
-  const accountPositioning = text(accountProfile.positioning) || text(accountProfile.displayName) || '当前账号定位尚未填写';
+  const audience = text(profile.targetAudience) || text(profile.niche) || '目标受众尚未在账号资料中确认';
+  const accountPositioning = text(profile.positioning) || text(profile.displayName) || '当前账号定位尚未填写';
   const topic = text(opportunity.title, '待确认选题');
   const reasons = [...list(opportunity.whyNow), ...list(opportunity.whyFit)];
   const constraints = [...list(opportunity.blockingFactors), ...list(opportunity.missingEvidence), ...list(opportunity.privacyConstraints)];
@@ -85,10 +86,13 @@ export function buildWritingBrief({ opportunity, signals = [], accountProfile = 
 
 export function buildDraftFromBrief(brief, now = new Date()) {
   if (!brief?.opportunityId || !brief.topic) throw new TypeError('Brief 不完整');
-  const evidenceLines = brief.evidence.length
-    ? brief.evidence.map((signal, index) => {
+  const evidence = list(brief.evidence).filter((signal) => signal && typeof signal === 'object');
+  const reasons = list(brief.whyWorthDoing);
+  const candidates = list(brief.titleCandidates);
+  const evidenceLines = evidence.length
+    ? evidence.map((signal, index) => {
       const metrics = metricSummary(signal.metrics);
-      const author = signal.author.name ? `作者：${signal.author.name}` : '作者资料暂无';
+      const author = signal.author?.name ? `作者：${signal.author.name}` : '作者资料暂无';
       const source = signal.url ? `来源：${signal.url}` : '来源链接暂无';
       return `${index + 1}. 《${signal.title}》\n${author}${metrics ? `；${metrics}` : ''}\n${source}`;
     }).join('\n')
@@ -97,7 +101,7 @@ export function buildDraftFromBrief(brief, now = new Date()) {
     `最近我在关注「${brief.topic}」。`,
     '',
     '这件事为什么值得做',
-    ...brief.whyWorthDoing.map((reason) => `- ${reason}`),
+    ...reasons.map((reason) => `- ${reason}`),
     '',
     '真实观察依据',
     evidenceLines,
@@ -114,8 +118,8 @@ export function buildDraftFromBrief(brief, now = new Date()) {
     createdAt: new Date(now).toISOString(),
     updatedAt: new Date(now).toISOString(),
     brief,
-    title: brief.titleCandidates[0] || brief.topic,
+    title: candidates[0] || brief.topic,
     body,
-    references: brief.evidence.map((signal) => signal.id),
+    references: evidence.map((signal) => signal.id),
   };
 }

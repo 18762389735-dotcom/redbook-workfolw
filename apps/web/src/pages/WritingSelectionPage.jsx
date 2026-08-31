@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
 import { createPublishRecord, createWritingDraft, getWritingWorkspace, updateWritingDraft } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { StatusTag } from '../components/StatusTag';
@@ -44,7 +44,8 @@ export function WritingSelectionPage({ onNavigate }) {
     setNotice('');
     try {
       const result = await createWritingDraft(opportunity.id);
-      const next = result.draft;
+      const next = result?.draft;
+      if (!next || typeof next !== 'object') throw new Error('草稿响应格式无效');
       setDraft(next);
       setTitle(next.title || '');
       setBody(next.body || '');
@@ -135,7 +136,7 @@ function BriefCard({ brief, opportunity, busy, onGenerate, onBack }) {
   </section>;
 }
 
-function BriefContent({ brief }) {
+function BriefContent({ brief = {} }) {
   return <div className="writing-brief-grid">
     <BriefList title="为什么值得做" values={brief.whyWorthDoing} />
     <div className="writing-brief-block"><strong>目标受众 / 账号适配</strong><p>目标受众：{display(brief.targetAudience)}</p><p>账号定位：{display(brief.accountFit?.positioning)}</p><p>适配状态：{display(brief.accountFit?.status)}</p><p>证据完整度：{display(brief.evidenceCompleteness || brief.confidence, '未知')}</p>{list(brief.accountFit?.reasons).map((value, index) => <small key={index}>{value}</small>)}</div>
@@ -146,12 +147,12 @@ function BriefContent({ brief }) {
 
 function BriefList({ title, values, wide = false }) { return <div className={wide ? 'writing-brief-block writing-brief-block--wide' : 'writing-brief-block'}><strong>{title}</strong>{list(values).length ? <ul>{values.map((value, index) => <li key={`${value}-${index}`}>{value}</li>)}</ul> : <p>暂无明确记录。</p>}</div>; }
 
-function Evidence({ signal }) {
-  const metrics = [['likes', '赞'], ['favorites', '收藏'], ['comments', '评论'], ['shares', '分享']].filter(([key]) => Number.isFinite(signal.metrics?.[key])).map(([, label]) => `${label} ${signal.metrics[key]}`).join('，');
+function Evidence({ signal = {} }) {
+  const metrics = [['likes', '赞'], ['favorites', '收藏'], ['comments', '评论'], ['shares', '分享']].filter(([key]) => Number.isFinite(signal.metrics?.[key])).map(([key, label]) => `${label} ${signal.metrics[key]}`).join('，');
   return <article className="writing-evidence"><strong>《{display(signal.title, '未命名笔记')}》</strong><span>{display(signal.author?.name, '作者资料暂无')}{metrics ? ` · ${metrics}` : ''}</span>{signal.bodyText ? <p>{String(signal.bodyText).slice(0, 180)}{String(signal.bodyText).length > 180 ? '…' : ''}</p> : null}{signal.url ? <a href={signal.url} target="_blank" rel="noreferrer">查看原始 Signal</a> : null}</article>;
 }
 
-function DraftEditor({ brief, title, body, busy, onTitle, onBody, onSave, onBack }) {
+function DraftEditor({ brief = {}, title, body, busy, onTitle, onBody, onSave, onBack }) {
   const candidates = list(brief.titleCandidates);
   const [showPublish, setShowPublish] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState('');
@@ -176,4 +177,15 @@ function DraftEditor({ brief, title, body, busy, onTitle, onBody, onSave, onBack
     <div className="writing-mvp-actions"><button className="button button--secondary" onClick={onBack}>返回机会页</button><button className="button button--secondary" onClick={() => setShowPublish(true)} disabled={busy !== ''}>标记已发布</button><button className="button button--primary" onClick={onSave} disabled={busy !== '' || !title.trim() || !body.trim()}>{busy === 'save' ? '正在保存' : '保存草稿'}</button></div>
     {showPublish && <form className="publish-record-form" onSubmit={submitPublish}><strong>记录这份稿件已发布</strong><label className="writing-mvp-field">已发布链接<input type="url" required value={publishedUrl} onChange={(event) => setPublishedUrl(event.target.value)} placeholder="https://www.xiaohongshu.com/..." /></label><label className="writing-mvp-field">发布时间<input type="datetime-local" required value={publishedAt} onChange={(event) => setPublishedAt(event.target.value)} /></label><label className="writing-mvp-field">备注<textarea value={publishNotes} onChange={(event) => setPublishNotes(event.target.value)} /></label>{publishError && <p className="page-message page-message--error">{publishError}</p>}<div className="writing-mvp-actions"><button type="button" className="button button--secondary" onClick={() => setShowPublish(false)}>取消</button><button type="submit" className="button button--primary" disabled={busy !== ''}>{busy === 'publish' ? '正在保存' : '保存发布记录'}</button></div></form>}
   </section>;
+}
+
+export class WritingPageErrorBoundary extends Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() { return { failed: true }; }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <section className="hot-empty-state"><strong>草稿页面加载失败</strong><p>当前草稿字段不完整，请返回机会页重试。</p><button className="button button--secondary" onClick={() => this.props.onNavigate?.('opportunities')}>返回机会页</button></section>;
+  }
 }
