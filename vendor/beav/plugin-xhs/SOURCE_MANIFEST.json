@@ -1,0 +1,18 @@
+{
+  "upstream": "https://github.com/Jamailar/Beav",
+  "license": "MIT License - Non-Commercial Use Only",
+  "donor": {
+    "path": "F:\\最新工作台\\Beav-main\\Beav-main\\Plugin\\src",
+    "backgroundSha256": "0D5EA8786A0F86F79F3B78B03C4BDD7635FF8A69C3B413BE37FE178418F27DE4"
+  },
+  "files": [
+    { "targetPath": "xhsBridge.js", "donorPath": "Plugin/src/xhsBridge.js", "donorSha256": "5013864E64D5662705E294BDC917AC9E9CA44EC0B2EE7E22A2F337513E23EDD5", "mode": "byte-identical" },
+    { "targetPath": "pageObserver.js", "donorPath": "Plugin/src/pageObserver.js", "donorSha256": "BE6C34043168EEBBCF861CCC6435F4D07882518919F7C7FC0464990519F0D4D0", "mode": "byte-identical" },
+    { "targetPath": "pageRouteBridge.js", "donorPath": "Plugin/src/pageRouteBridge.js", "donorSha256": "600504A2CF18FF6D78F83781656BDBF92ED5AF2341A2BE3E2F9F28B8BCDFE00C", "mode": "byte-identical" },
+    { "targetPath": "captureRuntime.js", "donorPath": "Plugin/src/captureRuntime.js", "donorSha256": "2D386B73683827A2D8FD0179DB5CEE62BA4789F11752AA37A71AF21B54B8F10B", "mode": "byte-identical" },
+    { "targetPath": "THIRD_PARTY_NOTICES.txt", "donorPath": "Plugin/src/THIRD_PARTY_NOTICES.txt", "donorSha256": "A4652EF469788F5F280B702D6DCE387AB0DCEEC689E27D19096635A498A50A02", "mode": "byte-identical" },
+    { "targetPath": "reference/background.js", "donorPath": "Plugin/src/background.js", "donorSha256": "0D5EA8786A0F86F79F3B78B03C4BDD7635FF8A69C3B413BE37FE178418F27DE4", "mode": "byte-identical", "runtime": false },
+    { "targetPath": "background-xhs-derived.js", "donorPath": "Plugin/src/background.js", "donorSha256": "0D5EA8786A0F86F79F3B78B03C4BDD7635FF8A69C3B413BE37FE178418F27DE4", "mode": "derived-function", "functions": ["extractXhsNotePayload", "extractXhsBloggerPayload"] },
+    { "targetPath": "redbook-payload-adapter.js", "donorPath": "Plugin/src/background.js", "donorSha256": "0D5EA8786A0F86F79F3B78B03C4BDD7635FF8A69C3B413BE37FE178418F27DE4", "mode": "adapter" }
+  ]
+}
