@@ -31,7 +31,9 @@ class ElectronCollector {
       import('../providers/xiaohongshu/normalize-creator.mjs'),
       import('../providers/xiaohongshu/collector-payload.mjs'),
       import('../vendor/beav/xhs-collector/beavExtractors.js'),
-    ]).then(([signal, creator, payload, extractors]) => ({ signal, creator, payload, extractors }));
+      import('../vendor/beav/plugin-xhs/background-xhs-derived.js'),
+      import('../vendor/beav/plugin-xhs/redbook-payload-adapter.js'),
+    ]).then(([signal, creator, payload, extractors, beavRuntime, beavAdapter]) => ({ signal, creator, payload, extractors, beavRuntime, beavAdapter }));
   }
 
   async emit(task) { if (task) this.onTaskChanged(task); return task; }
@@ -122,6 +124,48 @@ class ElectronCollector {
     }
   }
 
+  async collectBeavCurrentNote() {
+    const window = this.xhsSession.getWindow();
+    const pageUrl = safeWindowUrl(window);
+    if (!pageUrl || !/^https:\/\/(www\.)?(xiaohongshu\.com|rednote\.com)\//i.test(pageUrl)) throw new Error('请在小红书会话中打开公开笔记');
+    const [{ signal, beavRuntime, beavAdapter }] = [await this.modulesPromise];
+    const task = await this.createTask('visible-notes', 1);
+    try {
+      await this.updateTask(task.id, { status: 'running', startedAt: now() });
+      const raw = await this.page(window, beavRuntime.extractXhsNotePayload, [], 'beav-current-note');
+      const source = { provider: 'beav-derived-electron-session', method: 'visible-notes', taskId: task.id, capturedAt: now() };
+      const input = beavAdapter.beavNotePayloadToSignalInput(raw, source);
+      const normalized = signal.normalizeXiaohongshuSignal(input, source);
+      const result = await this.post('/api/signals/ingest', { signals: [normalized] });
+      await this.updateTask(task.id, { status: 'completed', completedAt: now(), progress: { current: 1, total: 1 }, result });
+      return { task: await (await this.taskStore()).get(task.id), result };
+    } catch (error) {
+      const failed = await this.updateTask(task.id, { status: 'failed', completedAt: now(), error: error.message || String(error) });
+      throw Object.assign(new Error(error.message || String(error)), { task: failed });
+    }
+  }
+
+  async collectBeavCurrentCreator() {
+    const window = this.xhsSession.getWindow();
+    const pageUrl = safeWindowUrl(window);
+    if (!pageUrl || !/^https:\/\/(www\.)?(xiaohongshu\.com|rednote\.com)\//i.test(pageUrl)) throw new Error('请在小红书会话中打开博主主页');
+    const [{ creator, beavRuntime, beavAdapter }] = [await this.modulesPromise];
+    const task = await this.createTask('creator-profile', 1);
+    try {
+      await this.updateTask(task.id, { status: 'running', startedAt: now() });
+      const raw = await this.page(window, beavRuntime.extractXhsBloggerPayload, [], 'beav-current-creator');
+      const source = { provider: 'beav-derived-electron-session', method: 'creator-profile', taskId: task.id, capturedAt: now() };
+      const input = beavAdapter.beavCreatorPayloadToCreatorInput(raw, source);
+      const normalized = creator.normalizeXiaohongshuCreator(input, source);
+      const result = await this.post('/api/creators/ingest', { creators: [normalized] });
+      await this.updateTask(task.id, { status: 'completed', completedAt: now(), progress: { current: 1, total: 1 }, result, creator: normalized });
+      return { task: await (await this.taskStore()).get(task.id), result, creator: normalized };
+    } catch (error) {
+      const failed = await this.updateTask(task.id, { status: 'failed', completedAt: now(), error: error.message || String(error) });
+      throw Object.assign(new Error(error.message || String(error)), { task: failed });
+    }
+  }
+
   async collectCreatorBaseline(limitInput = 12) {
     const window = this.xhsSession.getWindow();
     if (!window) throw new Error('请先点击“打开小红书”');
@@ -178,14 +222,15 @@ class ElectronCollector {
   async listTasks() { return (await this.taskStore()).list(); }
 
   async structuralSmoke() {
-    const [{ extractors, payload }] = [await this.modulesPromise];
+    const [{ extractors, payload, beavRuntime, beavAdapter }] = [await this.modulesPromise];
     if (typeof extractors.extractVisibleContext !== 'function' || typeof extractors.extractObservedNoteFeed !== 'function' || typeof extractors.extractXhsBloggerPayload !== 'function' || typeof extractors.extractXhsBloggerNotesPayload !== 'function') throw new Error('Beav-derived extractors import failed');
     const task = await this.createTask('visible-notes', 0);
     await this.updateTask(task.id, { status: 'running' });
     const hidden = await this.xhsSession.createHidden('data:text/html,<title>Collector%20Smoke</title>');
     try {
-      const bridge = await this.page(hidden, () => ({ installed: window.__REDBOX_XHS_BRIDGE_INSTALLED__ === true, responses: Array.isArray(window.__REDBOX_XHS_RESPONSES__) }), [], 'bridge-smoke');
-      if (!bridge.installed || !bridge.responses) throw new Error('xhs-preload bridge injection flags missing');
+      const bridge = await this.page(hidden, () => ({ installed: window.__REDBOX_XHS_BRIDGE_INSTALLED__ === true, responses: Array.isArray(window.__REDBOX_XHS_RESPONSES__), observer: window.__REDBOOK_BEAV_PAGE_OBSERVER_INSTALLED__ === true, shim: window.__REDBOOK_BEAV_XHS_SHIM_INSTALLED__ === true, observerError: window.__REDBOOK_BEAV_PAGE_OBSERVER_ERROR__ || null, nodeGlobals: ['require', 'process', 'Buffer'].filter((key) => typeof window[key] !== 'undefined') }), [], 'bridge-smoke');
+      if (!bridge.installed || !bridge.responses || !bridge.observer || !bridge.shim || bridge.nodeGlobals.length) throw new Error(`xhs-preload Beav injection flags missing or page globals exposed: ${JSON.stringify(bridge)}`);
+      if (typeof beavRuntime.extractXhsNotePayload !== 'function' || typeof beavRuntime.extractXhsBloggerPayload !== 'function' || typeof beavAdapter.beavNotePayloadToSignalInput !== 'function' || typeof beavAdapter.beavCreatorPayloadToCreatorInput !== 'function') throw new Error('Beav XHS runtime import failed');
       await this.updateTask(task.id, { status: 'cancelled', completedAt: now() });
       return { partition: this.xhsSession.partition, bridge, extractCandidateCards: typeof payload.extractCandidateCards === 'function', taskId: task.id };
     } finally {
