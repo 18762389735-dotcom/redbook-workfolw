@@ -6,7 +6,8 @@ const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.me
 
 test('Windows package boundary includes runtime and required notices but excludes user data', () => {
   const files = packageJson.build.files;
-  for (const required of ['dist/**/*', 'server/**/*', 'core/**/*', 'providers/**/*', 'desktop/**/*', 'vendor/beav/xhs-collector/**/*']) assert.ok(files.includes(required), `${required} should be packaged`);
+  for (const required of ['dist/**/*', 'server/**/*', 'core/**/*', 'providers/**/*', 'desktop/**/*', 'vendor/beav/xhs-collector/**/*', 'vendor/beav/plugin-xhs/**/*']) assert.ok(files.includes(required), `${required} should be packaged`);
+  assert.ok(files.includes('!vendor/beav/plugin-xhs/reference/**'));
   for (const excluded of ['!data/**', '!test/**', '!release/**']) assert.ok(files.includes(excluded), `${excluded} should be excluded`);
   assert.deepEqual(packageJson.build.extraResources, [
     { from: 'vendor/beav/LICENSE', to: 'vendor/beav/LICENSE' },

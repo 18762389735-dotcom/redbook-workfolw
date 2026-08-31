@@ -6,6 +6,7 @@ const { XhsSession, isUsableWindow, safeDestroyWindow } = require('./xhs-session
 const { ElectronCollector } = require('./electron-collector.cjs');
 const { stopChildProcess } = require('./process-lifecycle.cjs');
 const { sendToWindow } = require('./window-ipc.cjs');
+const { pageShimSource } = require('./beav-extension-adapter.cjs');
 
 let serverProcess;
 let serverUrl;
@@ -18,7 +19,19 @@ let appShutdownInProgress = false;
 function projectRoot() { return app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..'); }
 function runtimeRoot() { return path.resolve(process.env.REDBOOK_DESKTOP_RUNTIME_DIR || app.getPath('userData')); }
 function serverEntry() { const entry = path.join(projectRoot(), 'server', 'index.mjs'); if (!existsSync(entry)) throw new Error(`Server entry not found: ${entry}`); return entry; }
-function bridgeSource() { const source = path.join(projectRoot(), 'vendor', 'beav', 'xhs-collector', 'xhsBridge.js'); if (!existsSync(source)) throw new Error(`xhsBridge source not found: ${source}`); return readFileSync(source, 'utf8'); }
+function beavXhsSources() {
+  const root = path.join(projectRoot(), 'vendor', 'beav', 'plugin-xhs');
+  const names = { xhsBridge: 'xhsBridge.js', pageRouteBridge: 'pageRouteBridge.js', pageObserver: 'pageObserver.js' };
+  return Object.fromEntries([...Object.entries(names).map(([key, name]) => {
+    const source = path.join(root, name);
+    if (!existsSync(source)) throw new Error(`Beav XHS source not found: ${source}`);
+    return [key, readFileSync(source, 'utf8')];
+  }), ['pageShim', pageShimSource()]]);
+}
+function isOwnedXhsSender(sender) {
+  if (!xhsSession?.ownsWebContents(sender) || sender?.isDestroyed?.()) return false;
+  try { return /^https:\/\/(www\.)?(xiaohongshu\.com|rednote\.com)\//i.test(sender.getURL()); } catch { return false; }
+}
 function isLocalAppUrl(url) { try { return serverUrl && new URL(url).origin === new URL(serverUrl).origin; } catch { return false; } }
 function waitForServer(child, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -47,11 +60,17 @@ async function stopLocalServer() {
 
 function broadcastTask(task) { if (task) sendToWindow(workbenchWindow, 'desktop:collector-task-changed', task); }
 function registerIpc() {
-  ipcMain.on('desktop:xhs-bridge-source-sync', (event) => { event.returnValue = xhsSession?.ownsWebContents(event.sender) ? bridgeSource() : null; });
+  ipcMain.on('desktop:beav-xhs-sources-sync', (event) => { event.returnValue = xhsSession?.ownsWebContents(event.sender) ? beavXhsSources() : null; });
   ipcMain.handle('desktop:open-xhs', () => xhsSession.open());
   ipcMain.handle('desktop:xhs-status', () => xhsSession.status());
   ipcMain.handle('desktop:collect-visible', () => collector.collectVisible());
   ipcMain.handle('desktop:collect-creator', () => collector.collectCreator());
+  ipcMain.handle('desktop:beav-xhs-collector-action', (event, action) => {
+    if (!isOwnedXhsSender(event.sender)) throw new Error('只允许小红书会话调用采集器');
+    if (action === 'save-xhs') return collector.collectBeavCurrentNote();
+    if (action === 'xhs:collect-current-blogger') return collector.collectBeavCurrentCreator();
+    throw new Error('不支持的 Beav XHS 采集消息');
+  });
   ipcMain.handle('desktop:collect-creator-baseline', (_event, limit) => collector.collectCreatorBaseline(limit));
   ipcMain.handle('desktop:cancel-collector-task', (_event, taskId) => collector.cancel(taskId));
   ipcMain.handle('desktop:list-collector-tasks', () => collector.listTasks());

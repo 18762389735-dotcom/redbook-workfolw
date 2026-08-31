@@ -40,6 +40,6 @@ test('production Server serves the built renderer', async () => {
 
 test('electron build files exclude runtime data and include desktop server', async () => {
   const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.ok(packageJson.build.files.includes('!data/**')); assert.ok(packageJson.build.files.includes('server/**/*')); assert.ok(packageJson.build.files.includes('desktop/**/*')); assert.ok(packageJson.build.files.includes('vendor/beav/xhs-collector/**/*')); assert.equal(packageJson.build.nsis.oneClick, false);
+  assert.ok(packageJson.build.files.includes('!data/**')); assert.ok(packageJson.build.files.includes('server/**/*')); assert.ok(packageJson.build.files.includes('desktop/**/*')); assert.ok(packageJson.build.files.includes('vendor/beav/xhs-collector/**/*')); assert.ok(packageJson.build.files.includes('vendor/beav/plugin-xhs/**/*')); assert.ok(packageJson.build.files.includes('!vendor/beav/plugin-xhs/reference/**')); assert.equal(packageJson.build.nsis.oneClick, false);
   assert.deepEqual(packageJson.build.extraResources, [{ from: 'vendor/beav/LICENSE', to: 'vendor/beav/LICENSE' }, { from: 'THIRD_PARTY_NOTICES.md', to: 'THIRD_PARTY_NOTICES.md' }]);
 });

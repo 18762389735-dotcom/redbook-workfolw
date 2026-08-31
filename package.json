@@ -22,10 +22,12 @@
       "providers/**/*",
       "desktop/**/*",
       "vendor/beav/xhs-collector/**/*",
+      "vendor/beav/plugin-xhs/**/*",
       "package.json",
       "!data/**",
       "!test/**",
       "!release/**",
+      "!vendor/beav/plugin-xhs/reference/**",
       "!*.tmp"
     ],
     "extraResources": [
