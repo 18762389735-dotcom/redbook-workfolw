@@ -61,6 +61,8 @@ let refreshing = false;
 let capturePendingAction = '';
 let captureFeedback = null;
 let captureSignature = '';
+let xhsSearchKeywordDraft = '';
+let xhsSearchLimitDraft = 20;
 let updateChecking = false;
 let platformSafetyNoticePending = false;
 let resolvePlatformSafetyNoticeDialog = null;
@@ -68,6 +70,7 @@ let currentSettings = {
   xhsBloggerNoteLimit: 50,
   xhsIntervalMaxSeconds: 6,
   xhsBloggerCollectionMode: 'api',
+  xhsKeywordNoteLimit: 20,
   xhsSaveCommentsWithNote: true,
 };
 
@@ -277,7 +280,7 @@ async function refreshContext() {
 
 function renderContext(nextContext) {
   const health = nextContext?.health || {};
-  renderConnection(health, nextContext?.browserControl || {});
+  renderConnection(health, nextContext?.browserControl || {}, nextContext);
   renderPageIdentity(resolvePageIdentity(nextContext));
   renderCaptureActions(nextContext);
   renderBloggerNotesPanel(nextContext);
@@ -285,9 +288,16 @@ function renderContext(nextContext) {
   renderTaskLogs(nextContext?.logs || nextContext?.queue?.logs || []);
 }
 
-function renderConnection(captureHealth, browserControlHealth) {
+function renderConnection(captureHealth, browserControlHealth, nextContext = null) {
   const captureConnected = captureHealth?.success === true;
   const browserControlConnected = browserControlHealth?.success === true;
+  if (isXhsContext(nextContext)) {
+    elements.serverStatus.textContent = captureConnected
+      ? '工作台已连接'
+      : '小红书 AI 运营工作台未连接';
+    elements.serverStatus.className = captureConnected ? 'status ok' : 'status error';
+    return;
+  }
   if (!captureConnected && !browserControlConnected) {
     elements.serverStatus.textContent = '小红书 AI 运营工作台未启动';
     elements.serverStatus.className = 'status error';
@@ -320,6 +330,23 @@ function resolvePageIdentity(nextContext) {
       ...platformMeta,
       title: '未检测到可操作页面',
       detail: '打开网页后会自动识别平台和页面类型',
+    };
+  }
+
+  if (pageType === 'search' || pageType === 'xhs-search') {
+    const keyword = getXhsSearchKeyword(tab.url, identity);
+    return {
+      ...platformMeta,
+      title: keyword ? `搜索：${keyword}` : fallbackTitle || '小红书搜索',
+      detail: keyword ? `${platformMeta.name} · 搜索 · ${keyword}` : `${platformMeta.name} · 搜索`,
+    };
+  }
+
+  if (pageType === 'feed' || pageType === 'xhs-feed') {
+    return {
+      ...platformMeta,
+      title: fallbackTitle || '小红书首页',
+      detail: `${platformMeta.name} · 当前可见笔记`,
     };
   }
 
@@ -374,10 +401,21 @@ function renderCaptureActions(nextContext) {
   if (captureSignature !== nextSignature) {
     captureFeedback = null;
     captureSignature = nextSignature;
+    xhsSearchKeywordDraft = getXhsSearchKeyword(nextContext?.tab?.url, nextContext?.pageIdentity);
+    xhsSearchLimitDraft = Math.max(1, Math.min(Number(currentSettings?.xhsKeywordNoteLimit || 20), 50));
   }
 
-  elements.captureActionPanel.classList.toggle('hidden', config.actions.length === 0);
-  if (config.actions.length === 0) return;
+  elements.captureActionPanel.classList.toggle('hidden', config.actions.length === 0 && !config.emptyMessage);
+  if (config.actions.length === 0) {
+    elements.captureMark.textContent = config.mark || '小';
+    elements.captureTitle.textContent = config.title || '小红书采集';
+    elements.captureSubtitle.textContent = config.subtitle || '当前页面';
+    elements.captureActions.replaceChildren();
+    elements.captureOptions.replaceChildren();
+    elements.captureOptions.classList.add('hidden');
+    renderCaptureStatus(config.emptyMessage || '', 'idle');
+    return;
+  }
 
   const isHealthy = Boolean(nextContext?.health?.success);
   elements.captureMark.textContent = config.mark || 'R';
@@ -411,6 +449,38 @@ function renderCaptureActions(nextContext) {
     text.textContent = '保存评论区';
     label.append(checkbox, text);
     elements.captureOptions.appendChild(label);
+    elements.captureOptions.classList.remove('hidden');
+  }
+
+  if (config.variant === 'xhs-search') {
+    const fields = document.createElement('div');
+    fields.className = 'field-grid';
+    const keywordLabel = document.createElement('label');
+    keywordLabel.className = 'field';
+    const keywordText = document.createElement('span');
+    keywordText.textContent = '关键词';
+    const keywordInput = document.createElement('input');
+    keywordInput.id = 'xhs-search-keyword';
+    keywordInput.type = 'text';
+    keywordInput.value = xhsSearchKeywordDraft;
+    keywordInput.placeholder = '输入小红书搜索关键词';
+    keywordInput.addEventListener('input', () => { xhsSearchKeywordDraft = keywordInput.value; });
+    keywordLabel.append(keywordText, keywordInput);
+    const limitLabel = document.createElement('label');
+    limitLabel.className = 'field';
+    const limitText = document.createElement('span');
+    limitText.textContent = '数量';
+    const limitInput = document.createElement('input');
+    limitInput.id = 'xhs-search-limit';
+    limitInput.type = 'number';
+    limitInput.min = '1';
+    limitInput.max = '50';
+    limitInput.step = '1';
+    limitInput.value = String(xhsSearchLimitDraft);
+    limitInput.addEventListener('input', () => { xhsSearchLimitDraft = limitInput.value; });
+    limitLabel.append(limitText, limitInput);
+    fields.append(keywordLabel, limitLabel);
+    elements.captureOptions.appendChild(fields);
     elements.captureOptions.classList.remove('hidden');
   }
 
@@ -507,6 +577,15 @@ async function runCaptureAction(action) {
     return;
   }
 
+  const searchOptions = action === 'keywordSearch' || action === 'visibleSearch'
+    ? getXhsSearchOptions()
+    : null;
+  if (action === 'keywordSearch' && !searchOptions.keyword) {
+    captureFeedback = { status: 'error', message: '请先输入小红书搜索关键词' };
+    renderCaptureActions(context);
+    return;
+  }
+
   platformSafetyNoticePending = true;
   renderCaptureActions(context);
   let canContinue = false;
@@ -534,12 +613,28 @@ async function runCaptureAction(action) {
       tabId,
       tabUrl: tab.url || '',
     });
-    const response = await sendMessage({
+    const message = {
       type: meta.type,
       tabId,
       tabUrl: tab.url || '',
       windowId: Number(tab.windowId || 0) || undefined,
-    });
+    };
+    if (action === 'visibleSearch') {
+      message.options = {
+        method: 'visible-notes',
+        limit: searchOptions.limit,
+        taskType: 'visible-search',
+        taskTitle: `搜索结果采集：${searchOptions.keyword || '当前页面'}`,
+      };
+    }
+    if (action === 'visibleFeed') {
+      message.options = { method: 'visible-notes', taskType: 'visible-feed', taskTitle: '采集当前可见笔记' };
+    }
+    if (action === 'keywordSearch') {
+      message.keyword = searchOptions.keyword;
+      message.options = { method: 'visible-notes', limit: searchOptions.limit, taskType: 'keyword' };
+    }
+    const response = await sendMessage(message);
     if (response.taskQueue) {
       renderTaskQueue(response.taskQueue);
       renderTaskLogs(response.taskQueue.logs || []);
@@ -791,6 +886,30 @@ function getCaptureActionConfig(nextContext) {
       actions: [],
     };
   }
+  if (platform === 'xhs' && (pageType === 'search' || pageType === 'xhs-search')) {
+    const keyword = getXhsSearchKeyword(tab.url, identity);
+    return {
+      variant: 'xhs-search',
+      title: '小红书搜索采集',
+      subtitle: keyword ? `当前关键词：${keyword}` : '当前搜索页',
+      actions: [
+        { label: '采集当前搜索结果', action: 'visibleSearch', primary: true, title: '采集当前页面已加载的搜索结果' },
+        { label: '按关键词采集', action: 'keywordSearch', title: '按关键词采集小红书搜索结果' },
+      ],
+      hint: '采集结果将进入工作台 Signal Store',
+    };
+  }
+  if (platform === 'xhs' && (pageType === 'feed' || pageType === 'xhs-feed')) {
+    return {
+      variant: 'xhs-feed',
+      title: '小红书采集',
+      subtitle: '当前可见笔记',
+      actions: [
+        { label: '采集当前可见笔记', action: 'visibleFeed', primary: true, title: '采集当前页面已加载的笔记' },
+      ],
+      hint: '采集结果将进入工作台 Signal Store',
+    };
+  }
   if (platform === 'xhs' && pageType === 'profile') {
     return {
       variant: 'xhs-profile',
@@ -814,12 +933,11 @@ function getCaptureActionConfig(nextContext) {
   }
   if (platform === 'xhs') {
     return {
-      variant: 'xhs-page',
+      variant: 'xhs-unavailable',
       title: '小红书采集',
       subtitle: '当前页面',
-      actions: [
-        { label: '保存网页', action: 'savePageLink', primary: true, title: '保存当前页面链接到工作台' },
-      ],
+      actions: [],
+      emptyMessage: '当前页面暂无可执行的小红书采集操作',
     };
   }
   if (platform === 'youtube') {
@@ -908,6 +1026,9 @@ function getCaptureActionMeta(action) {
     comments: { type: 'xhs:collect-current-comments', pending: '采集中...', done: '评论已写入工作台' },
     saveBlogger: { type: 'xhs:collect-current-blogger', pending: '保存中...', done: '博主资料已写入工作台' },
     bloggerNotes: { type: 'xhs:collect-blogger-notes', pending: '采集中...', done: '已采集主页笔记' },
+    visibleSearch: { type: 'xhs:collect-visible-note-links', pending: '采集中...', done: '已采集当前搜索结果' },
+    visibleFeed: { type: 'xhs:collect-visible-note-links', pending: '采集中...', done: '已采集当前可见笔记' },
+    keywordSearch: { type: 'xhs:collect-keyword', pending: '采集中...', done: '已完成关键词采集' },
     exportJson: { type: 'xhs:export-current-note-json', pending: '导出中...', done: '已导出 JSON' },
     savePageAuto: { type: 'save-page-auto', pending: '保存中...', done: '已保存到工作台' },
     savePageLink: { type: 'save-page-link', pending: '保存中...', done: '已保存到工作台' },
@@ -1134,8 +1255,10 @@ function getPlatformMeta(platform) {
 function inferPageType(pageInfo, tab) {
   const kind = String(pageInfo?.kind || '').toLowerCase();
   const url = String(tab?.url || '').toLowerCase();
+  if (/search_result(?:_ai)?(?:[/?#]|$)/.test(url) || /xhs-search|search/.test(kind) && /xiaohongshu|rednote/.test(url)) return 'xhs-search';
   if (/profile|author|博主|主页/.test(kind) || /\/user\/profile\//.test(url)) return 'profile';
   if (/note|image|小红书/.test(kind) || /\/explore\/|\/discovery\/item\//.test(url)) return 'note';
+  if (/^https?:\/\/(?:www\.)?(?:xiaohongshu\.com|rednote\.com)\/(?:explore|discovery)\/?(?:[?#]|$)/.test(url)) return 'xhs-feed';
   if (/post|tweet|帖子|推文/.test(kind) || /\/comments\/|\/status\/|instagram\.com\/(p|reel)\//.test(url)) return 'post';
   if (/zhihu-answer|知乎回答/.test(kind)) return 'article';
   if (/zhihu-article|知乎文章|知乎专栏/.test(kind)) return 'article';
@@ -1156,9 +1279,46 @@ function getPageTypeLabel(pageType) {
       return '文章';
     case 'post':
       return '帖子';
+    case 'search':
+    case 'xhs-search':
+      return '搜索';
+    case 'feed':
+    case 'xhs-feed':
+      return '首页';
     default:
       return '页面';
   }
+}
+
+function isXhsContext(nextContext) {
+  const tab = nextContext?.tab || {};
+  const pageInfo = nextContext?.pageInfo || {};
+  const identity = nextContext?.pageIdentity || {};
+  return normalizePlatform(pageInfo.platform || tab.hostname || tab.url || identity.platform || pageInfo.kind) === 'xhs';
+}
+
+function getXhsSearchKeyword(rawUrl, pageIdentity = {}) {
+  try {
+    const url = new URL(String(rawUrl || ''));
+    return String(
+      url.searchParams.get('keyword') ||
+      url.searchParams.get('search_keyword') ||
+      url.searchParams.get('q') ||
+      pageIdentity?.keyword ||
+      '',
+    ).replace(/\s+/g, ' ').trim();
+  } catch {
+    return String(pageIdentity?.keyword || '').replace(/\s+/g, ' ').trim();
+  }
+}
+
+function getXhsSearchOptions() {
+  const keyword = String(xhsSearchKeywordDraft || '').replace(/\s+/g, ' ').trim();
+  const requestedLimit = Number(xhsSearchLimitDraft || currentSettings?.xhsKeywordNoteLimit || 20);
+  return {
+    keyword,
+    limit: Math.max(1, Math.min(Number.isFinite(requestedLimit) ? Math.round(requestedLimit) : 20, 50)),
+  };
 }
 
 function cleanTitle(value) {

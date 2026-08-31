@@ -784,6 +784,17 @@ function detectCaptureTargetFromUrl(rawUrl) {
   }
 
   if (/(^|\.)xiaohongshu\.com$/i.test(hostname) || /(^|\.)rednote\.com$/i.test(hostname)) {
+    if (/^\/search_result(?:_ai)?(?:\/|$)/i.test(pathname)) {
+      return {
+        kind: 'xhs-search',
+        platform: 'xhs',
+        pageType: 'xhs-search',
+        action: 'xhs:collect-visible-note-links',
+        label: '采集当前小红书搜索结果',
+        description: '当前页面已识别为小红书搜索页。',
+        detected: true,
+      };
+    }
     if (USER_PROFILE_FEATURE_ENABLED && pathname.startsWith('/user/profile/')) {
       return {
         kind: 'xhs-profile',
@@ -799,6 +810,17 @@ function detectCaptureTargetFromUrl(rawUrl) {
         action: 'save-xhs',
         label: '保存小红书笔记到工作台',
         description: '当前页面已识别为小红书笔记页。',
+        detected: true,
+      };
+    }
+    if (/^\/(?:explore|discovery)\/?$/i.test(pathname)) {
+      return {
+        kind: 'xhs-feed',
+        platform: 'xhs',
+        pageType: 'xhs-feed',
+        action: 'xhs:collect-visible-note-links',
+        label: '采集当前可见笔记',
+        description: '当前页面已识别为小红书可见笔记流。',
         detected: true,
       };
     }
@@ -1259,12 +1281,15 @@ async function openSidePanelForSender(sender) {
 
 async function getSidePanelContext(tabIdInput) {
   const { tab } = await resolveMessageTab({ tabId: tabIdInput }, null);
+  const isXhsTab = isXhsPageUrl(tab?.url);
   const [health, browserControl] = await Promise.all([
     checkRedbookAwareHealth().catch((error) => ({
       success: false,
       error: error instanceof Error ? error.message : String(error),
     })),
-    readBrowserControlHealth(),
+    isXhsTab
+      ? Promise.resolve({ success: true, state: 'not-required', checkedAt: new Date().toISOString() })
+      : readBrowserControlHealth(),
   ]);
   const inspection = tab?.id ? await inspectPage(tab.id).catch(() => null) : null;
   const pageIdentity = tab?.id
@@ -1286,6 +1311,15 @@ async function getSidePanelContext(tabIdInput) {
     logs: getXhsTaskLogsForState(),
     queue: getXhsTaskQueueState(),
   };
+}
+
+function isXhsPageUrl(rawUrl) {
+  try {
+    const hostname = new URL(String(rawUrl || '')).hostname.toLowerCase();
+    return /(^|\.)xiaohongshu\.com$/.test(hostname) || /(^|\.)rednote\.com$/.test(hostname);
+  } catch {
+    return false;
+  }
 }
 
 async function readBrowserControlHealth() {
@@ -1397,12 +1431,29 @@ function extractSidePanelPageIdentity() {
   const hostname = location.hostname.replace(/^www\./, '');
   const href = location.href;
   const path = location.pathname;
+  let searchKeyword = '';
+  try {
+    const search = new URL(href).searchParams;
+    searchKeyword = normalizeText(search.get('keyword') || search.get('search_keyword') || search.get('q') || '');
+  } catch {
+    searchKeyword = '';
+  }
   const baseTitle = cleanTitle(meta('og:title') || document.title);
 
   if (/xiaohongshu\.com|rednote\.com/i.test(hostname)) {
     const state = readInitialState();
     const stateTitle = walkStrings(state, ['title', 'displayTitle', 'desc']);
     const stateUser = walkStrings(state, ['nickname', 'nickName', 'userName', 'name']);
+    if (/^\/search_result(?:_ai)?(?:\/|$)/i.test(path)) {
+      return {
+        platform: 'xiaohongshu',
+        pageType: 'xhs-search',
+        title: searchKeyword ? `搜索：${searchKeyword}` : (baseTitle || '小红书搜索'),
+        keyword: searchKeyword,
+        url: href,
+        hostname,
+      };
+    }
     if (/\/user\/profile\//i.test(path)) {
       const username = normalizeText(
         text('.user-name') ||
@@ -1440,6 +1491,15 @@ function extractSidePanelPageIdentity() {
         pageType: 'note',
         title,
         author,
+        url: href,
+        hostname,
+      };
+    }
+    if (/^\/(?:explore|discovery)\/?$/i.test(path)) {
+      return {
+        platform: 'xiaohongshu',
+        pageType: 'xhs-feed',
+        title: baseTitle || '小红书首页',
         url: href,
         hostname,
       };
@@ -6354,6 +6414,7 @@ async function collectXhsNoteLinks(urlsInput, options = {}) {
   const failures = [];
 
   const targetUrls = urls.slice(0, limit);
+  const method = normalizeText(options?.method) || (normalizeText(options?.taskType) === 'blogger-notes' ? 'creator-baseline' : 'visible-notes');
   if (normalizeText(options?.taskType) === 'blogger-notes') {
     logCreatorBaselineBatchContext(options, options?.creatorUserId, targetUrls.length);
   }
@@ -6420,7 +6481,7 @@ async function collectXhsNoteLinks(urlsInput, options = {}) {
         throw new Error('未识别到笔记内容');
       }
       const redbookResult = await forwardToRedbook('note', payload, {
-        method: 'creator-baseline',
+        method,
         creatorUserId: normalizeText(options?.creatorUserId),
         creatorNickname: normalizeText(options?.creatorNickname),
       });
@@ -6541,6 +6602,7 @@ async function collectVisibleXhsNoteLinksFromTab(tabId, options = {}) {
   }
   return await collectXhsNoteLinks(urls, {
     ...options,
+    method: normalizeText(options?.method) || 'visible-notes',
     taskType: normalizeText(options?.taskType) || 'visible-links',
     taskTitle: normalizeText(options?.taskTitle) || `当前页批量采集：${normalizeText(payload?.title) || '小红书页面'}`,
   });
@@ -6589,6 +6651,7 @@ async function collectXhsKeyword(keywordInput, options = {}) {
     }
     return await collectXhsNoteLinks(urls, {
       ...options,
+      method: normalizeText(options?.method) || 'visible-notes',
       limit,
       taskType: 'keyword',
       taskTitle: `关键词采集：${keyword}`,

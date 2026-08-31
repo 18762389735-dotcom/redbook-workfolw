@@ -101,7 +101,8 @@ test('homepage collector forwards its extracted creator identity as batch contex
   assert.match(source, /creatorUserId: normalizeText\(payload\?\.userId\)/);
   assert.match(source, /creatorNickname: normalizeText\(payload\?\.nickname\)/);
   assert.match(source, /method: 'creator-baseline',[\s\S]{0,220}creatorUserId: normalizeText\(payloadState\?\.userId\)/);
-  assert.match(source, /method: 'creator-baseline',[\s\S]{0,220}creatorUserId: normalizeText\(options\?\.creatorUserId\)/);
+  assert.match(source, /const method = normalizeText\(options\?\.method\) \|\| \(normalizeText\(options\?\.taskType\) === 'blogger-notes' \? 'creator-baseline' : 'visible-notes'\)/);
+  assert.match(source, /forwardToRedbook\('note', payload, \{[\s\S]{0,160}method,[\s\S]{0,160}creatorUserId: normalizeText\(options\?\.creatorUserId\)/);
 });
 
 test('re-ingesting an existing baseline note reconciles an unstable author id', async () => {

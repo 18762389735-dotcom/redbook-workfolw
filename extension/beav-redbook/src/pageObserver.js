@@ -678,12 +678,36 @@ function detectPageInfo() {
     }
 
     if (/(^|\.)xiaohongshu\.com$/i.test(hostname) || /(^|\.)rednote\.com$/i.test(hostname)) {
+        if (/^\/search_result(?:_ai)?(?:\/|$)/i.test(pathname)) {
+            return {
+                kind: 'xhs-search',
+                platform: 'xhs',
+                pageType: 'xhs-search',
+                action: 'xhs:collect-visible-note-links',
+                label: '采集当前小红书搜索结果',
+                description: '当前页面已识别为小红书搜索页。',
+                primaryEnabled: true,
+                detected: true,
+            };
+        }
         if (USER_PROFILE_FEATURE_ENABLED && isXhsProfilePath()) {
             return {
                 kind: 'xhs-profile',
                 action: 'xhs:collect-current-blogger',
                 label: '保存小红书博主资料到工作台',
                 description: '当前页面已识别为小红书博主页。',
+                primaryEnabled: true,
+                detected: true,
+            };
+        }
+        if (/^\/(?:explore|discovery)\/?$/i.test(pathname)) {
+            return {
+                kind: 'xhs-feed',
+                platform: 'xhs',
+                pageType: 'xhs-feed',
+                action: 'xhs:collect-visible-note-links',
+                label: '采集当前可见笔记',
+                description: '当前页面已识别为小红书可见笔记流。',
                 primaryEnabled: true,
                 detected: true,
             };
